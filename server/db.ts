@@ -7,20 +7,29 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const dbPath = path.resolve(__dirname, '../waffle_wisk.db');
-const uploadsDir = path.resolve(__dirname, '../uploads');
+const isVercel = !!(process.env.VERCEL || process.env.NOW_BUILDER);
+const dbPath = isVercel ? '/tmp/waffle_wisk.db' : path.resolve(__dirname, '../waffle_wisk.db');
+const uploadsDir = isVercel ? '/tmp/uploads' : path.resolve(__dirname, '../uploads');
 
 if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+  try {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  } catch (e) {
+    console.warn('Could not create uploads dir:', e);
+  }
 }
 
 let dbInstance: Database | null = null;
 
 function saveDb() {
   if (dbInstance) {
-    const data = dbInstance.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(dbPath, buffer);
+    try {
+      const data = dbInstance.export();
+      const buffer = Buffer.from(data);
+      fs.writeFileSync(dbPath, buffer);
+    } catch (err) {
+      console.warn('Database save skipped or failed:', err);
+    }
   }
 }
 
@@ -29,8 +38,12 @@ export async function getDb(): Promise<Database> {
 
   const SQL = await initSqlJs();
   if (fs.existsSync(dbPath)) {
-    const filebuffer = fs.readFileSync(dbPath);
-    dbInstance = new SQL.Database(filebuffer);
+    try {
+      const filebuffer = fs.readFileSync(dbPath);
+      dbInstance = new SQL.Database(filebuffer);
+    } catch (e) {
+      dbInstance = new SQL.Database();
+    }
   } else {
     dbInstance = new SQL.Database();
   }

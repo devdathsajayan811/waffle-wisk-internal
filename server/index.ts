@@ -21,7 +21,7 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
+export const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(cors());
@@ -31,6 +31,18 @@ app.use(express.urlencoded({ extended: true }));
 // Serve static uploads
 const uploadsPath = path.resolve(__dirname, '../uploads');
 app.use('/uploads', express.static(uploadsPath));
+
+// Ensure DB is initialized before handling requests
+let dbInitPromise: Promise<void> | null = null;
+app.use(async (_req, _res, next) => {
+  if (!dbInitPromise) {
+    dbInitPromise = initDb().catch((err) => {
+      console.error('Database init error:', err);
+    });
+  }
+  await dbInitPromise;
+  next();
+});
 
 // Register API Routes
 app.use('/api/auth', authRoutes);
@@ -49,11 +61,15 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// Initialize DB and start server
-initDb().then(() => {
-  app.listen(PORT, () => {
-    console.log(`🚀 Waffle Wisk Server running on http://localhost:${PORT}`);
+// Standalone local server listener
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+  initDb().then(() => {
+    app.listen(PORT, () => {
+      console.log(`🚀 Waffle Wisk Server running on http://localhost:${PORT}`);
+    });
+  }).catch((err) => {
+    console.error('Failed to initialize database:', err);
   });
-}).catch((err) => {
-  console.error('Failed to initialize database:', err);
-});
+}
+
+export default app;

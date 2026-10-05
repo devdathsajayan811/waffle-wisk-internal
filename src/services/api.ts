@@ -45,8 +45,9 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers,
   });
 
-  if (response.status === 401) {
-    // Unauthorized
+  const isLoginRequest = endpoint.startsWith('/auth/login');
+
+  if ((response.status === 401 || response.status === 403) && !isLoginRequest) {
     removeAuthToken();
     if (window.location.pathname !== '/login') {
       window.location.href = '/login';

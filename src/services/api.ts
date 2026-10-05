@@ -40,10 +40,15 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers['Content-Type'] = 'application/json';
   }
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers,
+    });
+  } catch (err: any) {
+    throw new Error('Network error: Unable to connect to server backend.');
+  }
 
   const isLoginRequest = endpoint.startsWith('/auth/login');
 
@@ -55,7 +60,22 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     throw new Error('Session expired or unauthorized');
   }
 
-  const data = await response.json();
+  const contentType = response.headers.get('content-type') || '';
+  const rawText = await response.text();
+
+  // If response is HTML (e.g., 404/500 from Vercel fallback router returning index.html)
+  if (!contentType.includes('application/json') || rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
+    throw new Error(
+      'Backend API endpoint returned HTML instead of JSON. Ensure vercel.json and api/index.ts are pushed to your GitHub repository and redeployed on Vercel.'
+    );
+  }
+
+  let data: any;
+  try {
+    data = JSON.parse(rawText);
+  } catch (_err) {
+    throw new Error('Server returned an invalid JSON response.');
+  }
 
   if (!response.ok) {
     throw new Error(data.error || 'API Request failed');

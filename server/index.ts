@@ -61,6 +61,14 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
+// Global JSON error handler (ensures Express never returns HTML error pages for API routes)
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('Express API Error:', err);
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal Server Error',
+  });
+});
+
 // Standalone local server listener
 if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
   initDb().then(() => {

@@ -36,7 +36,20 @@ function saveDb() {
 export async function getDb(): Promise<Database> {
   if (dbInstance) return dbInstance;
 
-  const SQL = await initSqlJs();
+  let SQL: any;
+  try {
+    SQL = await initSqlJs({
+      locateFile: (file) => {
+        const wasmPath = path.resolve(process.cwd(), 'node_modules/sql.js/dist', file);
+        if (fs.existsSync(wasmPath)) return wasmPath;
+        return file;
+      },
+    });
+  } catch (err) {
+    console.warn('locateFile failed, trying default initSqlJs:', err);
+    SQL = await initSqlJs();
+  }
+
   if (fs.existsSync(dbPath)) {
     try {
       const filebuffer = fs.readFileSync(dbPath);
@@ -47,14 +60,15 @@ export async function getDb(): Promise<Database> {
   } else {
     dbInstance = new SQL.Database();
   }
-  return dbInstance;
+  return dbInstance!;
 }
 
 // Database helper functions
 export const dbQuery = {
   all(sql: string, params: any[] = []): any[] {
     if (!dbInstance) throw new Error('Database not initialized');
-    const stmt = dbInstance.prepare(sql);
+    const sqlite = dbInstance;
+    const stmt = sqlite.prepare(sql);
     stmt.bind(params);
     const results: any[] = [];
     while (stmt.step()) {
@@ -71,9 +85,10 @@ export const dbQuery = {
 
   run(sql: string, params: any[] = []): { lastInsertRowid: number; changes: number } {
     if (!dbInstance) throw new Error('Database not initialized');
-    dbInstance.run(sql, params);
+    const sqlite = dbInstance;
+    sqlite.run(sql, params);
     
-    const res = dbInstance.exec('SELECT last_insert_rowid() as id, changes() as cnt');
+    const res = sqlite.exec('SELECT last_insert_rowid() as id, changes() as cnt');
     let lastInsertRowid = 0;
     let changes = 0;
     if (res && res.length > 0 && res[0].values && res[0].values.length > 0) {

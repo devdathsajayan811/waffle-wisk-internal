@@ -479,5 +479,28 @@ function seedData() {
 
     saveDb();
     console.log('Seed completed successfully!');
+  } else {
+    // Ensure default admin and staff accounts are guaranteed to exist
+    const adminUser = dbQuery.get('SELECT * FROM users WHERE username = ? OR email = ?', ['admin', 'admin@wafflewisk.com']);
+    if (!adminUser) {
+      console.log('Ensuring admin user exists...');
+      const adminPasswordHash = bcrypt.hashSync('admin123', 10);
+      dbQuery.run(
+        `INSERT INTO users (name, email, username, phone, password_hash, role, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ['Waffle Owner (Admin)', 'admin@wafflewisk.com', 'admin', '+91 98765 00001', adminPasswordHash, 'ADMIN', 'ACTIVE']
+      );
+      saveDb();
+    }
+
+    const staffUser = dbQuery.get('SELECT * FROM users WHERE username = ? OR email = ?', ['staff', 'staff@wafflewisk.com']);
+    if (!staffUser) {
+      console.log('Ensuring staff user exists...');
+      const staffPasswordHash = bcrypt.hashSync('staff123', 10);
+      dbQuery.run(
+        `INSERT INTO users (name, email, username, phone, password_hash, role, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ['Priya Sharma (Staff)', 'staff@wafflewisk.com', 'staff', '+91 98765 00002', staffPasswordHash, 'STAFF', 'ACTIVE']
+      );
+      saveDb();
+    }
   }
 }

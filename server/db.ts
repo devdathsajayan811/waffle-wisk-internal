@@ -50,11 +50,36 @@ export async function getDb(): Promise<Database> {
     SQL = await initSqlJs();
   }
 
+  const repoDbPath = path.resolve(process.cwd(), 'waffle_wisk.db');
+  const altRepoDbPath = path.resolve(__dirname, '../waffle_wisk.db');
+
+  let fileToLoad: string | null = null;
   if (fs.existsSync(dbPath)) {
+    fileToLoad = dbPath;
+  } else if (fs.existsSync(repoDbPath)) {
+    fileToLoad = repoDbPath;
+  } else if (fs.existsSync(altRepoDbPath)) {
+    fileToLoad = altRepoDbPath;
+  }
+
+  if (fileToLoad) {
     try {
-      const filebuffer = fs.readFileSync(dbPath);
+      const filebuffer = fs.readFileSync(fileToLoad);
       dbInstance = new SQL.Database(filebuffer);
+      if (isVercel && fileToLoad !== dbPath) {
+        try {
+          fs.writeFileSync(dbPath, filebuffer);
+        } catch (e) {
+          console.warn('Could not mirror bundled DB to /tmp:', e);
+        }
+      }
     } catch (e) {
+      console.warn('Failed reading DB file, creating fresh DB:', e);
+      dbInstance = new SQL.Database();
+    }
+  } else {
+    dbInstance = new SQL.Database();
+  }
       dbInstance = new SQL.Database();
     }
   } else {

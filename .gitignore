@@ -13,6 +13,7 @@ build/
 *.db-journal
 *.sqlite
 *.sqlite3
+*.sqlite-journal
 waffle_wisk.db
 
 # User uploaded files (keep uploads folder structure via .gitkeep)

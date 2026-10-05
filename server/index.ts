@@ -34,14 +34,20 @@ app.use('/uploads', express.static(uploadsPath));
 
 // Ensure DB is initialized before handling requests
 let dbInitPromise: Promise<void> | null = null;
-app.use(async (_req, _res, next) => {
+app.use(async (_req, res, next) => {
   if (!dbInitPromise) {
     dbInitPromise = initDb().catch((err) => {
       console.error('Database init error:', err);
+      dbInitPromise = null;
+      throw err;
     });
   }
-  await dbInitPromise;
-  next();
+  try {
+    await dbInitPromise;
+    next();
+  } catch (err: any) {
+    res.status(500).json({ error: `Database initialization failed: ${err?.message || err}` });
+  }
 });
 
 // Register API Routes

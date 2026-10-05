@@ -38,15 +38,28 @@ export async function getDb(): Promise<Database> {
 
   let SQL: any;
   try {
-    SQL = await initSqlJs({
-      locateFile: (file) => {
-        const wasmPath = path.resolve(process.cwd(), 'node_modules/sql.js/dist', file);
-        if (fs.existsSync(wasmPath)) return wasmPath;
-        return file;
-      },
-    });
+    const wasmPath1 = path.resolve(process.cwd(), 'node_modules/sql.js/dist/sql-wasm.wasm');
+    const wasmPath2 = path.resolve(__dirname, '../node_modules/sql.js/dist/sql-wasm.wasm');
+    let wasmBinary: Buffer | null = null;
+    if (fs.existsSync(wasmPath1)) {
+      wasmBinary = fs.readFileSync(wasmPath1);
+    } else if (fs.existsSync(wasmPath2)) {
+      wasmBinary = fs.readFileSync(wasmPath2);
+    }
+
+    if (wasmBinary) {
+      SQL = await initSqlJs({ wasmBinary: wasmBinary.buffer.slice(wasmBinary.byteOffset, wasmBinary.byteOffset + wasmBinary.byteLength) as ArrayBuffer });
+    } else {
+      SQL = await initSqlJs({
+        locateFile: (file) => {
+          const wasmPath = path.resolve(process.cwd(), 'node_modules/sql.js/dist', file);
+          if (fs.existsSync(wasmPath)) return wasmPath;
+          return file;
+        },
+      });
+    }
   } catch (err) {
-    console.warn('locateFile failed, trying default initSqlJs:', err);
+    console.warn('initSqlJs wasmBinary failed, trying fallback:', err);
     SQL = await initSqlJs();
   }
 

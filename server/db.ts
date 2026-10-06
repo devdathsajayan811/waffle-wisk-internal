@@ -93,11 +93,6 @@ export async function getDb(): Promise<Database> {
   } else {
     dbInstance = new SQL.Database();
   }
-      dbInstance = new SQL.Database();
-    }
-  } else {
-    dbInstance = new SQL.Database();
-  }
   return dbInstance!;
 }
 
@@ -515,6 +510,5 @@ function seedData() {
       );
       saveDb();
     }
-  }
   }
 }

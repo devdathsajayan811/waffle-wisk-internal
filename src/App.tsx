@@ -11,14 +11,8 @@ import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { POS } from './pages/POS';
 import { Products } from './pages/Products';
-import { Inventory } from './pages/Inventory';
 import { Orders } from './pages/Orders';
-import { Receipts } from './pages/Receipts';
-import { Reports } from './pages/Reports';
-import { Users } from './pages/Users';
-import { SettingsPage } from './pages/Settings';
-import { AuditLogs } from './pages/AuditLogs';
-import { Connectivity } from './pages/Connectivity';
+import { MaterialRequests } from './pages/MaterialRequests';
 
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode; requireAdmin?: boolean }> = ({
@@ -40,7 +34,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; requireAdmin?: boole
   }
 
   if (requireAdmin && !isAdmin) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/pos" replace />;
   }
 
   return <>{children}</>;
@@ -56,25 +50,13 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       case '/dashboard':
         return 'Dashboard Overview';
       case '/pos':
-        return 'POS / New Order';
+        return 'Create Cart';
       case '/orders':
-        return 'Order History';
+        return 'Orders & Carts History';
       case '/products':
         return 'Items & Menu Management';
-      case '/inventory':
-        return 'Inventory & Storage';
-      case '/receipts':
-        return 'Receipts Archive';
-      case '/reports':
-        return 'Analytics & Reports';
-      case '/users':
-        return 'User & Staff Management';
-      case '/audit-logs':
-        return 'Admin Audit Logs';
-      case '/connectivity':
-        return 'Connectivity & Health';
-      case '/settings':
-        return 'Portal Settings';
+      case '/material-requests':
+        return 'Raw Material Requests';
       default:
         return 'Waffle Wisk Cart';
     }
@@ -89,6 +71,12 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       </div>
     </div>
   );
+};
+
+// Root Redirect based on user role
+const RootRedirect: React.FC = () => {
+  const { isAdmin } = useAuth();
+  return <Navigate to={isAdmin ? '/dashboard' : '/pos'} replace />;
 };
 
 export const App: React.FC = () => {
@@ -106,40 +94,20 @@ export const App: React.FC = () => {
                   <ProtectedRoute>
                     <AppLayout>
                       <Routes>
-                        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                        <Route path="/" element={<RootRedirect />} />
                         <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/pos" element={<POS />} />
                         <Route path="/orders" element={<Orders />} />
-                        <Route path="/products" element={<Products />} />
-                        <Route path="/inventory" element={<Inventory />} />
-                        <Route path="/receipts" element={<Receipts />} />
-                        <Route path="/reports" element={<Reports />} />
                         <Route
-                          path="/users"
+                          path="/products"
                           element={
                             <ProtectedRoute requireAdmin>
-                              <Users />
+                              <Products />
                             </ProtectedRoute>
                           }
                         />
-                        <Route
-                          path="/audit-logs"
-                          element={
-                            <ProtectedRoute requireAdmin>
-                              <AuditLogs />
-                            </ProtectedRoute>
-                          }
-                        />
-                        <Route path="/connectivity" element={<Connectivity />} />
-                        <Route
-                          path="/settings"
-                          element={
-                            <ProtectedRoute requireAdmin>
-                              <SettingsPage />
-                            </ProtectedRoute>
-                          }
-                        />
-                        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                        <Route path="/material-requests" element={<MaterialRequests />} />
+                        <Route path="*" element={<RootRedirect />} />
                       </Routes>
                     </AppLayout>
                   </ProtectedRoute>

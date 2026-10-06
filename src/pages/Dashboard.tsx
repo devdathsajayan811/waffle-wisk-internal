@@ -1,378 +1,256 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  DollarSign,
-  ShoppingBag,
-  TrendingUp,
+  ShoppingCart,
+  Receipt,
+  IndianRupee,
   PackageCheck,
+  PlusCircle,
   Clock,
-  AlertTriangle,
   ArrowRight,
-  RefreshCw,
+  PlayCircle,
+  CheckCircle2,
 } from 'lucide-react';
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-} from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import { StatusBadge } from '../components/StatusBadge';
-import { Order } from '../types';
+import { Cart, MaterialRequest } from '../types';
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { settings } = useAuth();
-  const currency = settings?.currency_symbol || '₹';
+  const { user, isAdmin } = useAuth();
 
-  const [timeRange, setTimeRange] = useState<'today' | '7days' | '30days'>('7days');
-  const [metrics, setMetrics] = useState<any>(null);
-  const [recentOrders, setRecentOrders] = useState<Order[]>([]);
-  const [lowStockList, setLowStockList] = useState<any[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState(true);
+  const [activeCarts, setActiveCarts] = useState<Cart[]>([]);
+  const [completedCartsCount, setCompletedCartsCount] = useState(0);
+  const [todayTotal, setTodayTotal] = useState(0);
+  const [pendingRequests, setPendingRequests] = useState<MaterialRequest[]>([]);
+  const [creatingCart, setCreatingCart] = useState(false);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchDashboardData = async () => {
     try {
-      const salesData = await api.getSalesReport(timeRange);
-      setMetrics(salesData);
+      setLoading(true);
 
-      const ordersData = await api.getOrders({ date_range: 'today' });
-      setRecentOrders(ordersData.slice(0, 6));
+      // Fetch Today's Cart Stats
+      const stats = await api.getCartStatsToday();
+      setCompletedCartsCount(stats.completedCarts);
+      setTodayTotal(stats.todayTotal);
 
-      const lowStockData = await api.getLowStock();
-      const combined = [
-        ...lowStockData.products.map((p) => ({
-          name: p.name,
-          stock: p.stock_quantity,
-          unit: p.unit,
-          type: 'Product',
-        })),
-        ...lowStockData.inventory.map((i) => ({
-          name: i.name,
-          stock: i.current_quantity,
-          unit: i.unit,
-          type: 'Storage Material',
-        })),
-      ];
-      setLowStockList(combined);
+      // Fetch Active Carts
+      const activeData = await api.getCarts({ status: 'ACTIVE' });
+      setActiveCarts(activeData);
+
+      // Fetch Material Requests
+      const requestsData = await api.getMaterialRequests();
+      const pending = requestsData.filter((r) => r.status === 'Pending');
+      setPendingRequests(pending);
     } catch (err) {
-      console.error('Failed to load dashboard metrics:', err);
+      console.error('Failed to load dashboard statistics:', err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
-  }, [timeRange]);
+    fetchDashboardData();
+  }, [isAdmin]);
+
+  const handleCreateNewCart = async () => {
+    setCreatingCart(true);
+    try {
+      const newCart = await api.createCart();
+      navigate(`/pos?cartId=${newCart.id}`);
+    } catch (err: any) {
+      alert(err.message || 'Failed to create new cart');
+    } finally {
+      setCreatingCart(false);
+    }
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner Alert for Low Stock Items */}
-      {lowStockList.length > 0 && (
-        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300/80 rounded-2xl p-4 shadow-soft flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
-              <AlertTriangle className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="font-bold text-sm text-amber-950">
-                Low Stock Alert ({lowStockList.length} Items Require Attention)
-              </h4>
-              <p className="text-xs text-amber-800">
-                Example: "{lowStockList[0].name} — {lowStockList[0].stock} {lowStockList[0].unit} remaining"
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => navigate('/inventory')}
-            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center shrink-0"
-          >
-            <span>Manage Inventory</span>
-            <ArrowRight className="w-4 h-4 ml-1.5" />
-          </button>
-        </div>
-      )}
-
-      {/* Header Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6 max-w-6xl mx-auto">
+      {/* Welcome Banner & Create New Cart Button */}
+      <div className="bg-gradient-to-r from-choco-800 to-choco-900 rounded-3xl p-6 text-white shadow-soft flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-choco-900">Sales Overview</h2>
-          <p className="text-xs text-choco-500">Real-time performance metrics and cart activity</p>
+          <span className="px-3 py-1 bg-waffle-500/20 text-waffle-300 text-xs font-black tracking-wider rounded-full uppercase border border-waffle-500/30">
+            {isAdmin ? 'Owner Dashboard' : 'Staff Dashboard'}
+          </span>
+          <h1 className="text-2xl font-black mt-2 font-sans tracking-tight">
+            Welcome back, {user?.name}! 👋
+          </h1>
+          <p className="text-xs text-cream-200 mt-1">
+            Waffle Wisk Multi-Cart Order Management
+          </p>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div>
           <button
-            onClick={fetchData}
-            className="p-2 text-choco-600 bg-white hover:bg-cream-200 border border-cream-300 rounded-xl transition-colors shadow-2xs"
-            title="Refresh Data"
+            onClick={handleCreateNewCart}
+            disabled={creatingCart}
+            className="w-full sm:w-auto px-6 py-3.5 bg-gradient-to-r from-waffle-500 to-waffle-600 hover:from-waffle-600 hover:to-waffle-700 text-white font-extrabold text-sm rounded-2xl shadow-waffle hover:shadow-lg transition-all flex items-center justify-center space-x-2 disabled:opacity-50"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <PlusCircle className="w-5 h-5" />
+            <span>{creatingCart ? 'Creating...' : '+ CREATE NEW CART'}</span>
           </button>
-          <div className="bg-white p-1 rounded-xl border border-cream-300 shadow-2xs flex space-x-1">
-            <button
-              onClick={() => setTimeRange('today')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
-                timeRange === 'today' ? 'bg-waffle-500 text-white shadow-xs' : 'text-choco-600 hover:bg-cream-100'
-              }`}
-            >
-              Today
-            </button>
-            <button
-              onClick={() => setTimeRange('7days')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
-                timeRange === '7days' ? 'bg-waffle-500 text-white shadow-xs' : 'text-choco-600 hover:bg-cream-100'
-              }`}
-            >
-              7 Days
-            </button>
-            <button
-              onClick={() => setTimeRange('30days')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
-                timeRange === '30days' ? 'bg-waffle-500 text-white shadow-xs' : 'text-choco-600 hover:bg-cream-100'
-              }`}
-            >
-              30 Days
-            </button>
+        </div>
+      </div>
+
+      {/* DASHBOARD STATS */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+        {/* Today's Active Carts */}
+        <div className="bg-white p-6 rounded-3xl border border-cream-300 shadow-soft flex items-center justify-between">
+          <div>
+            <p className="text-xs font-extrabold text-choco-500 uppercase tracking-wider">Active Carts</p>
+            <h3 className="text-3xl font-black text-waffle-600 mt-1">
+              {loading ? '...' : activeCarts.length}
+            </h3>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-waffle-100 text-waffle-600 flex items-center justify-center text-xl font-bold">
+            <ShoppingCart className="w-6 h-6 text-waffle-600" />
+          </div>
+        </div>
+
+        {/* Today's Completed Carts */}
+        <div className="bg-white p-6 rounded-3xl border border-cream-300 shadow-soft flex items-center justify-between">
+          <div>
+            <p className="text-xs font-extrabold text-choco-500 uppercase tracking-wider">Completed Carts</p>
+            <h3 className="text-3xl font-black text-choco-900 mt-1">
+              {loading ? '...' : completedCartsCount}
+            </h3>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-cream-200 text-choco-700 flex items-center justify-center text-xl font-bold">
+            <CheckCircle2 className="w-6 h-6 text-choco-700" />
+          </div>
+        </div>
+
+        {/* Today's Total */}
+        <div className="bg-white p-6 rounded-3xl border border-cream-300 shadow-soft flex items-center justify-between">
+          <div>
+            <p className="text-xs font-extrabold text-choco-500 uppercase tracking-wider">Today's Total</p>
+            <h3 className="text-3xl font-black text-emerald-600 mt-1">
+              ₹{loading ? '...' : todayTotal.toLocaleString('en-IN')}
+            </h3>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-xl font-bold">
+            <IndianRupee className="w-6 h-6 text-emerald-600" />
           </div>
         </div>
       </div>
 
-      {/* 6 Core Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        {/* Card 1: Today's Sales */}
-        <div className="bg-white p-4 rounded-2xl border border-cream-200 shadow-soft hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-choco-500 uppercase tracking-wider">Total Sales</span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
-              <DollarSign className="w-4 h-4" />
-            </div>
+      {/* ACTIVE CARTS SECTION (SIMULTANEOUS MULTI-CART MANAGER) */}
+      <div className="bg-white rounded-3xl p-6 border border-cream-300 shadow-soft">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-base font-extrabold text-choco-900">Active Carts ({activeCarts.length})</h2>
+            <p className="text-xs text-choco-500 font-medium">
+              Click OPEN to edit, add items, or complete any active cart independently.
+            </p>
           </div>
-          <p className="text-xl font-extrabold text-choco-900">
-            {currency}
-            {metrics?.totalSales ? metrics.totalSales.toLocaleString() : 0}
-          </p>
-          <span className="text-[10px] text-emerald-600 font-medium">Completed orders</span>
+          <button
+            onClick={handleCreateNewCart}
+            disabled={creatingCart}
+            className="px-4 py-2 bg-waffle-50 hover:bg-waffle-100 text-waffle-800 font-extrabold text-xs rounded-xl border border-waffle-300 transition-colors flex items-center space-x-1"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>New Cart</span>
+          </button>
         </div>
 
-        {/* Card 2: Total Orders */}
-        <div className="bg-white p-4 rounded-2xl border border-cream-200 shadow-soft hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-choco-500 uppercase tracking-wider">Total Orders</span>
-            <div className="w-8 h-8 rounded-xl bg-waffle-100 text-waffle-700 flex items-center justify-center">
-              <ShoppingBag className="w-4 h-4" />
-            </div>
+        {loading ? (
+          <div className="py-12 text-center text-xs font-bold text-choco-500">
+            Loading active carts...
           </div>
-          <p className="text-xl font-extrabold text-choco-900">{metrics?.totalOrders || 0}</p>
-          <span className="text-[10px] text-waffle-600 font-medium">Cart transactions</span>
-        </div>
-
-        {/* Card 3: Average Order Value */}
-        <div className="bg-white p-4 rounded-2xl border border-cream-200 shadow-soft hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-choco-500 uppercase tracking-wider">Avg Order Value</span>
-            <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
-              <TrendingUp className="w-4 h-4" />
-            </div>
+        ) : activeCarts.length === 0 ? (
+          <div className="py-12 text-center text-xs text-choco-500 font-medium space-y-3">
+            <p>No active carts currently in progress.</p>
+            <button
+              onClick={handleCreateNewCart}
+              className="py-2.5 px-5 bg-waffle-500 hover:bg-waffle-600 text-white font-extrabold text-xs rounded-xl shadow-waffle inline-flex items-center space-x-1"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>+ Create First Cart</span>
+            </button>
           </div>
-          <p className="text-xl font-extrabold text-choco-900">
-            {currency}
-            {metrics?.avgOrderValue ? Math.round(metrics.avgOrderValue) : 0}
-          </p>
-          <span className="text-[10px] text-blue-600 font-medium">Per checkout ticket</span>
-        </div>
-
-        {/* Card 4: Products Sold */}
-        <div className="bg-white p-4 rounded-2xl border border-cream-200 shadow-soft hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-choco-500 uppercase tracking-wider">Products Sold</span>
-            <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
-              <PackageCheck className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-xl font-extrabold text-choco-900">{metrics?.totalProductsSold || 0}</p>
-          <span className="text-[10px] text-purple-600 font-medium">Waffles & items</span>
-        </div>
-
-        {/* Card 5: Pending Orders */}
-        <div className="bg-white p-4 rounded-2xl border border-cream-200 shadow-soft hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-choco-500 uppercase tracking-wider">Pending Orders</span>
-            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
-              <Clock className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-xl font-extrabold text-choco-900">{metrics?.pendingOrders || 0}</p>
-          <span className="text-[10px] text-amber-600 font-medium">Awaiting payment</span>
-        </div>
-
-        {/* Card 6: Low-Stock Items */}
-        <div className="bg-white p-4 rounded-2xl border border-cream-200 shadow-soft hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-choco-500 uppercase tracking-wider">Low-Stock Items</span>
-            <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center">
-              <AlertTriangle className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-xl font-extrabold text-rose-600">{lowStockList.length}</p>
-          <span className="text-[10px] text-rose-500 font-medium">Reorder required</span>
-        </div>
-      </div>
-
-      {/* Main Grid: Chart & Top Selling Products */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Sales Chart Container */}
-        <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-cream-200 shadow-soft">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-base font-bold text-choco-900">Sales Trend & Revenue</h3>
-              <p className="text-xs text-choco-500">Revenue trajectory over time</p>
-            </div>
-            <span className="text-xs font-bold text-waffle-600 bg-waffle-50 px-3 py-1 rounded-full border border-waffle-200">
-              {timeRange.toUpperCase()}
-            </span>
-          </div>
-
-          <div className="h-72 w-full">
-            {metrics?.chartData && metrics.chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={metrics.chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="waffleGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#E89D25" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="#E89D25" stopOpacity={0.0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F5EFE6" />
-                  <XAxis dataKey="date" stroke="#966E52" fontSize={11} tickLine={false} />
-                  <YAxis stroke="#966E52" fontSize={11} tickLine={false} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#2C1810',
-                      color: '#FFFDF9',
-                      borderRadius: '12px',
-                      border: 'none',
-                      boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
-                    }}
-                    formatter={(value: any) => [`${currency}${value}`, 'Revenue']}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="revenue"
-                    stroke="#D97706"
-                    strokeWidth={3}
-                    fillOpacity={1}
-                    fill="url(#waffleGrad)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex items-center justify-center text-xs text-choco-400">
-                No revenue data recorded for this time range yet.
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Top Selling Products Card */}
-        <div className="bg-white p-6 rounded-2xl border border-cream-200 shadow-soft">
-          <h3 className="text-base font-bold text-choco-900 mb-1">Top Selling Items</h3>
-          <p className="text-xs text-choco-500 mb-4">Most popular waffles & shakes</p>
-
-          <div className="space-y-4">
-            {metrics?.topProducts && metrics.topProducts.length > 0 ? (
-              metrics.topProducts.map((p: any, idx: number) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between p-3 rounded-xl bg-cream-50/60 border border-cream-200/80 hover:bg-cream-100 transition-colors"
-                >
-                  <div className="flex items-center space-x-3">
-                    <span className="w-6 h-6 rounded-lg bg-waffle-100 text-waffle-700 font-extrabold text-xs flex items-center justify-center">
-                      #{idx + 1}
-                    </span>
-                    <div>
-                      <h4 className="text-xs font-bold text-choco-900">{p.product_name}</h4>
-                      <p className="text-[10px] text-choco-500">{p.qty_sold} units sold</p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-extrabold text-emerald-700">
-                    {currency}
-                    {p.revenue}
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {activeCarts.map((cart) => (
+              <div
+                key={cart.id}
+                className="p-5 rounded-2xl bg-cream-50/70 border border-cream-300 hover:border-waffle-400 transition-all flex flex-col justify-between space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-black text-choco-900 text-base">
+                    {cart.cart_number}
+                  </span>
+                  <span className="px-2.5 py-0.5 text-[10px] font-extrabold bg-amber-100 text-amber-800 rounded-md uppercase">
+                    ACTIVE
                   </span>
                 </div>
-              ))
-            ) : (
-              <p className="text-xs text-choco-400 py-8 text-center">No items sold yet.</p>
-            )}
+
+                <div className="space-y-1 text-xs">
+                  <p className="text-choco-600">
+                    <strong className="text-choco-800">Staff:</strong> {cart.staff_name}
+                  </p>
+                  <p className="text-choco-600">
+                    <strong className="text-choco-800">Items:</strong> {cart.itemCount || 0} items
+                  </p>
+                  <p className="font-black text-emerald-600 text-base pt-1">
+                    Total: ₹{cart.total}
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => navigate(`/pos?cartId=${cart.id}`)}
+                  className="w-full py-2.5 bg-waffle-500 hover:bg-waffle-600 text-white font-extrabold text-xs rounded-xl shadow-waffle flex items-center justify-center space-x-1.5 transition-colors"
+                >
+                  <PlayCircle className="w-4 h-4" />
+                  <span>OPEN CART</span>
+                </button>
+              </div>
+            ))}
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Recent Orders Table */}
-      <div className="bg-white rounded-2xl border border-cream-200 shadow-soft overflow-hidden">
-        <div className="px-6 py-4 border-b border-cream-200 flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-bold text-choco-900">Recent Cart Orders</h3>
-            <p className="text-xs text-choco-500">Today's latest transactions</p>
-          </div>
+      {/* Raw Material Requests Quick Section */}
+      <div className="bg-white rounded-3xl p-6 border border-cream-300 shadow-soft">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-extrabold text-choco-900">Pending Raw Material Requests</h2>
           <button
-            onClick={() => navigate('/orders')}
+            onClick={() => navigate('/material-requests')}
             className="text-xs font-bold text-waffle-600 hover:text-waffle-700 flex items-center"
           >
-            <span>View All Orders</span>
-            <ArrowRight className="w-4 h-4 ml-1" />
+            View All <ArrowRight className="w-3.5 h-3.5 ml-1" />
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-cream-100/60 text-choco-700 uppercase tracking-wider font-bold">
-              <tr>
-                <th className="px-6 py-3">Order ID</th>
-                <th className="px-6 py-3">Customer</th>
-                <th className="px-6 py-3">Amount</th>
-                <th className="px-6 py-3">Payment</th>
-                <th className="px-6 py-3">Status</th>
-                <th className="px-6 py-3">Staff</th>
-                <th className="px-6 py-3">Date/Time</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-cream-200 text-choco-900">
-              {recentOrders.length > 0 ? (
-                recentOrders.map((ord) => (
-                  <tr key={ord.id} className="hover:bg-cream-50/50 transition-colors">
-                    <td className="px-6 py-3.5 font-bold font-mono text-waffle-700">{ord.order_number}</td>
-                    <td className="px-6 py-3.5 font-medium">{ord.customer_name}</td>
-                    <td className="px-6 py-3.5 font-extrabold text-choco-900">
-                      {currency}
-                      {ord.grand_total}
-                    </td>
-                    <td className="px-6 py-3.5 font-medium">{ord.payment_method}</td>
-                    <td className="px-6 py-3.5">
-                      <StatusBadge status={ord.payment_status} type="payment" />
-                    </td>
-                    <td className="px-6 py-3.5 text-choco-600">{ord.staff_name}</td>
-                    <td className="px-6 py-3.5 text-choco-500 text-[11px]">
-                      {new Date(ord.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={7} className="text-center py-8 text-choco-400">
-                    No orders recorded today.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        {pendingRequests.length === 0 ? (
+          <div className="py-8 text-center text-xs text-choco-500 font-medium">
+            No pending material requests.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {pendingRequests.slice(0, 5).map((req) => (
+              <div
+                key={req.id}
+                className="p-3.5 rounded-2xl bg-cream-50/60 border border-cream-200 flex items-center justify-between"
+              >
+                <div>
+                  <span className="font-extrabold text-choco-900 text-sm">{req.material}</span>
+                  <span className="text-xs text-choco-500 block">
+                    Requested by {req.staff_name} ({req.quantity} {req.unit})
+                    {req.cart_number ? ` for Cart #${req.cart_number}` : ''}
+                  </span>
+                </div>
+                <span className="px-2 py-0.5 text-xs font-bold bg-amber-100 text-amber-800 rounded-md">
+                  Pending
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 };
+
+export default Dashboard;

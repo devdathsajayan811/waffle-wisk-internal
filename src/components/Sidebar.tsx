@@ -5,12 +5,7 @@ import {
   ShoppingCart,
   Receipt,
   Package,
-  Boxes,
-  BarChart3,
-  Users,
-  Settings as SettingsIcon,
-  Activity,
-  ShieldCheck,
+  PackageCheck,
   LogOut,
   X,
 } from 'lucide-react';
@@ -24,21 +19,21 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) => {
   const { user, isAdmin, logout, settings } = useAuth();
 
-  const navItems = [
-    { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, role: 'ALL' },
-    { name: 'POS / New Order', path: '/pos', icon: ShoppingCart, role: 'ALL' },
-    { name: 'Orders', path: '/orders', icon: Receipt, role: 'ALL' },
-    { name: 'Items / Products', path: '/products', icon: Package, role: 'ALL' },
-    { name: 'Inventory / Storage', path: '/inventory', icon: Boxes, role: 'ALL' },
-    { name: 'Receipts', path: '/receipts', icon: Receipt, role: 'ALL' },
-    { name: 'Reports', path: '/reports', icon: BarChart3, role: 'ALL' },
-    { name: 'Users', path: '/users', icon: Users, role: 'ADMIN' },
-    { name: 'Audit Logs', path: '/audit-logs', icon: ShieldCheck, role: 'ADMIN' },
-    { name: 'Connectivity', path: '/connectivity', icon: Activity, role: 'ALL' },
-    { name: 'Settings', path: '/settings', icon: SettingsIcon, role: 'ADMIN' },
-  ];
-
-  const filteredNav = navItems.filter((item) => item.role === 'ALL' || (item.role === 'ADMIN' && isAdmin));
+  // Navigation Items according to strict requirements:
+  // ADMIN: Dashboard, Items, Orders/Carts, Material Requests, Logout
+  // STAFF: Create Cart, My Carts, Material Requests, Logout
+  const navItems = isAdmin
+    ? [
+        { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+        { name: 'Items', path: '/products', icon: Package },
+        { name: 'Orders / Carts', path: '/orders', icon: Receipt },
+        { name: 'Material Requests', path: '/material-requests', icon: PackageCheck },
+      ]
+    : [
+        { name: 'Create Cart', path: '/pos', icon: ShoppingCart },
+        { name: 'My Carts', path: '/orders', icon: Receipt },
+        { name: 'Material Requests', path: '/material-requests', icon: PackageCheck },
+      ];
 
   return (
     <>
@@ -67,7 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
                 <h1 className="font-extrabold text-lg text-cream-50 tracking-wide font-sans leading-tight">
                   {settings?.business_name || 'Waffle Wisk'}
                 </h1>
-                <p className="text-xs text-waffle-300 font-medium">Cart POS & Inventory</p>
+                <p className="text-xs text-waffle-300 font-medium">Internal Cart Portal</p>
               </div>
             </div>
             <button
@@ -81,11 +76,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
           {/* User Info Card */}
           <div className="mx-4 my-4 p-3 rounded-xl bg-choco-700/50 border border-choco-600/40 flex items-center justify-between">
             <div className="overflow-hidden pr-2">
-              <p className="text-sm font-semibold text-cream-50 truncate">{user?.name}</p>
+              <p className="text-sm font-bold text-cream-50 truncate">{user?.name}</p>
               <p className="text-xs text-cream-300 font-mono">@{user?.username}</p>
             </div>
             <span
-              className={`px-2 py-0.5 text-[10px] font-extrabold tracking-wider rounded-md uppercase ${
+              className={`px-2.5 py-0.5 text-[10px] font-extrabold tracking-wider rounded-md uppercase ${
                 isAdmin
                   ? 'bg-waffle-500/20 text-waffle-300 border border-waffle-500/30'
                   : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
@@ -96,8 +91,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
           </div>
 
           {/* Navigation Links */}
-          <nav className="px-3 space-y-1 overflow-y-auto max-h-[calc(100vh-220px)]">
-            {filteredNav.map((item) => {
+          <nav className="px-3 space-y-1.5 overflow-y-auto">
+            {navItems.map((item) => {
               const Icon = item.icon;
               return (
                 <NavLink
@@ -105,14 +100,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
                   to={item.path}
                   onClick={() => setMobileOpen(false)}
                   className={({ isActive }) =>
-                    `flex items-center px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group ${
+                    `flex items-center px-4 py-3 rounded-xl text-sm font-bold transition-all duration-200 group ${
                       isActive
-                        ? 'bg-gradient-to-r from-waffle-500 to-waffle-600 text-white shadow-soft font-semibold'
+                        ? 'bg-gradient-to-r from-waffle-500 to-waffle-600 text-white shadow-soft'
                         : 'text-cream-200 hover:bg-choco-700/60 hover:text-white'
                     }`
                   }
                 >
-                  <Icon className="w-4 h-4 mr-3 transition-transform group-hover:scale-110 shrink-0" />
+                  <Icon className="w-5 h-5 mr-3 transition-transform group-hover:scale-110 shrink-0" />
                   <span className="truncate">{item.name}</span>
                 </NavLink>
               );
@@ -124,13 +119,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
         <div className="p-4 border-t border-choco-700/60 bg-choco-900/30">
           <button
             onClick={logout}
-            className="w-full flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-medium text-rose-300 bg-rose-900/20 hover:bg-rose-900/40 border border-rose-800/40 transition-colors"
+            className="w-full flex items-center justify-center px-4 py-3 rounded-xl text-sm font-bold text-rose-300 bg-rose-900/20 hover:bg-rose-900/40 border border-rose-800/40 transition-colors"
           >
             <LogOut className="w-4 h-4 mr-2" />
-            Sign Out
+            Logout
           </button>
         </div>
       </aside>
     </>
   );
 };
+
+export default Sidebar;

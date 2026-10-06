@@ -186,3 +186,46 @@ export interface SystemStatus {
   applicationHealth: 'Healthy' | 'Warning' | 'Error';
   uptimeSeconds: number;
 }
+
+export type RequestStatus = 'Pending' | 'Approved' | 'Completed';
+
+export interface MaterialRequest {
+  id: number;
+  staff_id: number;
+  staff_name: string;
+  cart_id?: number;
+  cart_number?: string;
+  material: string;
+  quantity: number;
+  unit: string;
+  note?: string;
+  status: RequestStatus;
+  created_at: string;
+}
+
+export type CartStatus = 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+
+export interface CartItem {
+  id?: number;
+  cart_id?: number;
+  product_id: number;
+  item_name_snapshot: string;
+  price_snapshot: number;
+  quantity: number;
+  subtotal: number;
+}
+
+export interface Cart {
+  id: number;
+  cart_number: string;
+  staff_id: number;
+  staff_name: string;
+  customer_name?: string;
+  status: CartStatus;
+  total: number;
+  created_at: string;
+  completed_at?: string;
+  items?: CartItem[];
+  itemCount?: number;
+  receipt?: any;
+}

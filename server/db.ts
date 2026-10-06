@@ -301,6 +301,45 @@ export async function initDb() {
       ip_address TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- Material Requests Table
+    CREATE TABLE IF NOT EXISTS material_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_id INTEGER NOT NULL REFERENCES users(id),
+      staff_name TEXT NOT NULL,
+      cart_id INTEGER REFERENCES carts(id),
+      cart_number TEXT,
+      material TEXT NOT NULL,
+      quantity REAL NOT NULL,
+      unit TEXT NOT NULL,
+      note TEXT,
+      status TEXT NOT NULL DEFAULT 'Pending' CHECK(status IN ('Pending', 'Approved', 'Completed')),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Carts Table (Multiple Independent Carts)
+    CREATE TABLE IF NOT EXISTS carts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cart_number TEXT UNIQUE NOT NULL,
+      staff_id INTEGER REFERENCES users(id),
+      staff_name TEXT NOT NULL,
+      customer_name TEXT DEFAULT 'Walk-in Customer',
+      status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE', 'COMPLETED', 'CANCELLED')),
+      total REAL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      completed_at DATETIME
+    );
+
+    -- Cart Items Table (Price snapshot per item)
+    CREATE TABLE IF NOT EXISTS cart_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cart_id INTEGER NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id),
+      item_name_snapshot TEXT NOT NULL,
+      price_snapshot REAL NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      subtotal REAL NOT NULL
+    );
   `);
 
   saveDb();
@@ -485,6 +524,16 @@ function seedData() {
     dbQuery.run(sqlAudit, ['SYSTEM_INIT', adminId, 'Waffle Owner (Admin)', 'ADMIN', 'Initialized Waffle Wisk system schema and seeded default products & settings.']);
     dbQuery.run(sqlAudit, ['LOGIN', adminId, 'Waffle Owner (Admin)', 'ADMIN', 'Admin logged in from local terminal.']);
 
+    // Seed Material Requests
+    dbQuery.run(
+      `INSERT INTO material_requests (staff_id, staff_name, material, quantity, unit, note, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [staffId, 'Priya Sharma (Staff)', 'Flour / Premix Powder', 5, 'kg', 'Required for tomorrow morning', 'Pending']
+    );
+    dbQuery.run(
+      `INSERT INTO material_requests (staff_id, staff_name, material, quantity, unit, note, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [staffId, 'Priya Sharma (Staff)', 'Chocolate Sauce', 2, 'bottles', 'Running low on chocolate syrup', 'Approved']
+    );
+
     saveDb();
     console.log('Seed completed successfully!');
   } else {
@@ -504,11 +553,32 @@ function seedData() {
     if (!staffUser) {
       console.log('Ensuring staff user exists...');
       const staffPasswordHash = bcrypt.hashSync('staff123', 10);
-      dbQuery.run(
+      const staffRes = dbQuery.run(
         `INSERT INTO users (name, email, username, phone, password_hash, role, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         ['Priya Sharma (Staff)', 'staff@wafflewisk.com', 'staff', '+91 98765 00002', staffPasswordHash, 'STAFF', 'ACTIVE']
       );
       saveDb();
+    }
+
+    // Ensure material_requests table has initial demo data
+    try {
+      const matCount = dbQuery.get('SELECT count(*) as count FROM material_requests');
+      if (!matCount || Number(matCount.count) === 0) {
+        const staffObj = dbQuery.get('SELECT id, name FROM users WHERE role = "STAFF" LIMIT 1');
+        const sId = staffObj ? staffObj.id : 2;
+        const sName = staffObj ? staffObj.name : 'Priya Sharma (Staff)';
+        dbQuery.run(
+          `INSERT INTO material_requests (staff_id, staff_name, material, quantity, unit, note, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [sId, sName, 'Flour / Premix Powder', 5, 'kg', 'Required for tomorrow morning', 'Pending']
+        );
+        dbQuery.run(
+          `INSERT INTO material_requests (staff_id, staff_name, material, quantity, unit, note, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [sId, sName, 'Chocolate Sauce', 2, 'bottles', 'Running low on chocolate syrup', 'Approved']
+        );
+        saveDb();
+      }
+    } catch (e) {
+      console.warn('Material requests count check skipped:', e);
     }
   }
 }

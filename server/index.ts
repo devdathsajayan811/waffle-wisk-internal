@@ -15,6 +15,8 @@ import reportRoutes from './routes/reports.js';
 import settingsRoutes from './routes/settings.js';
 import auditRoutes from './routes/audit.js';
 import statusRoutes from './routes/status.js';
+import materialRequestsRoutes from './routes/materialRequests.js';
+import cartsRoutes from './routes/carts.js';
 
 dotenv.config();
 
@@ -61,6 +63,8 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/audit-logs', auditRoutes);
 app.use('/api/status', statusRoutes);
+app.use('/api/material-requests', materialRequestsRoutes);
+app.use('/api/carts', cartsRoutes);
 
 // Root Health endpoint
 app.get('/api/health', (_req, res) => {

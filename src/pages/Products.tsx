@@ -1,58 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Plus,
-  Search,
-  Filter,
-  Edit,
-  Trash2,
-  Tag,
-  ToggleLeft,
-  ToggleRight,
-  TrendingUp,
-  AlertTriangle,
-} from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { Package, Plus, Edit2, Trash2, Power, Image as ImageIcon, AlertCircle } from 'lucide-react';
 import { api } from '../services/api';
-import { Product, Category } from '../types';
-import { StatusBadge } from '../components/StatusBadge';
-import { ProductFormModal } from './ProductFormModal';
-import { PriceHistoryModal } from './PriceHistoryModal';
+import { Product } from '../types';
 
 export const Products: React.FC = () => {
-  const { isAdmin, settings } = useAuth();
-  const currency = settings?.currency_symbol || '₹';
-
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [availabilityFilter, setAvailabilityFilter] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Modals
-  const [formModalOpen, setFormModalOpen] = useState<boolean>(false);
+  // Modal State
+  const [modalOpen, setModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  const [priceModalOpen, setPriceModalOpen] = useState<boolean>(false);
-  const [priceProduct, setPriceProduct] = useState<Product | null>(null);
-
-  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  // Form State
+  const [name, setName] = useState('');
+  const [price, setPrice] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [isAvailable, setIsAvailable] = useState(true);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const fetchProducts = async () => {
-    setLoading(true);
     try {
-      const [catsRes, prodsRes] = await Promise.all([
-        api.getCategories(),
-        api.getProducts({
-          category: selectedCategory,
-          availability: availabilityFilter,
-          search: searchTerm,
-        }),
-      ]);
-      setCategories(catsRes);
-      setProducts(prodsRes);
-    } catch (err) {
-      console.error('Failed to fetch products:', err);
+      setLoading(true);
+      const data = await api.getProducts();
+      setProducts(data);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load items');
     } finally {
       setLoading(false);
     }
@@ -60,288 +34,310 @@ export const Products: React.FC = () => {
 
   useEffect(() => {
     fetchProducts();
-  }, [selectedCategory, availabilityFilter, searchTerm]);
+  }, []);
 
-  const handleToggleStatus = async (id: number) => {
-    if (!isAdmin) return;
+  const handleOpenAddModal = () => {
+    setEditingProduct(null);
+    setName('');
+    setPrice('');
+    setImageUrl('');
+    setIsAvailable(true);
+    setModalOpen(true);
+  };
+
+  const handleOpenEditModal = (prod: Product) => {
+    setEditingProduct(prod);
+    setName(prod.name);
+    setPrice(prod.price.toString());
+    setImageUrl(prod.image_url || '');
+    setIsAvailable(prod.availability === 'AVAILABLE');
+    setModalOpen(true);
+  };
+
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingImage(true);
     try {
-      await api.toggleProductStatus(id);
-      fetchProducts();
-    } catch (err) {
-      console.error('Failed to toggle product status:', err);
+      const res = await api.uploadProductImage(file);
+      setImageUrl(res.imageUrl);
+    } catch (err: any) {
+      alert('Failed to upload image: ' + err.message);
+    } finally {
+      setUploadingImage(false);
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!isAdmin) return;
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name || !price) return;
+
+    setSubmitting(true);
+    try {
+      const payload: Partial<Product> = {
+        name,
+        price: Number(price),
+        image_url: imageUrl || 'https://images.unsplash.com/photo-1562376552-0d160a2f238d?auto=format&fit=crop&w=400&q=80',
+        availability: isAvailable ? 'AVAILABLE' : 'UNAVAILABLE',
+        category_id: 1, // Default classic category
+      };
+
+      if (editingProduct) {
+        await api.updateProduct(editingProduct.id, payload);
+      } else {
+        await api.createProduct(payload);
+      }
+
+      setModalOpen(false);
+      fetchProducts();
+    } catch (err: any) {
+      alert(err.message || 'Failed to save item');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleToggleStatus = async (prod: Product) => {
+    try {
+      await api.toggleProductStatus(prod.id);
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === prod.id
+            ? { ...p, availability: p.availability === 'AVAILABLE' ? 'UNAVAILABLE' : 'AVAILABLE' }
+            : p
+        )
+      );
+    } catch (err: any) {
+      alert('Failed to toggle status: ' + err.message);
+    }
+  };
+
+  const handleDeleteProduct = async (id: number) => {
+    if (!window.confirm('Are you sure you want to delete this item?')) return;
     try {
       await api.deleteProduct(id);
-      setDeleteConfirmId(null);
-      fetchProducts();
-    } catch (err) {
-      console.error('Failed to delete product:', err);
+      setProducts((prev) => prev.filter((p) => p.id !== id));
+    } catch (err: any) {
+      alert('Failed to delete item: ' + err.message);
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Top Header & Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6 max-w-6xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-cream-300 pb-4">
         <div>
-          <h2 className="text-lg font-bold text-choco-900">Products & Menu Management</h2>
-          <p className="text-xs text-choco-500">Manage waffle items, pricing, inventory stock, and availability</p>
+          <h1 className="text-2xl font-black text-choco-900 flex items-center">
+            <Package className="w-7 h-7 mr-2 text-waffle-500" />
+            Manage Items
+          </h1>
+          <p className="text-xs text-choco-600 font-medium">
+            Add, edit, delete, or enable/disable menu items available on the cart.
+          </p>
         </div>
 
-        {isAdmin && (
-          <button
-            onClick={() => {
-              setEditingProduct(null);
-              setFormModalOpen(true);
-            }}
-            className="px-4 py-2.5 bg-gradient-to-r from-waffle-500 to-waffle-600 hover:from-waffle-600 hover:to-waffle-700 text-white font-bold text-xs rounded-xl shadow-waffle flex items-center space-x-2 shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add New Menu Item</span>
-          </button>
-        )}
+        <button
+          onClick={handleOpenAddModal}
+          className="py-3 px-5 bg-waffle-500 hover:bg-waffle-600 text-white font-extrabold text-sm rounded-2xl shadow-waffle flex items-center justify-center space-x-2 transition-all shrink-0"
+        >
+          <Plus className="w-5 h-5" />
+          <span>Add New Item</span>
+        </button>
       </div>
 
-      {/* Filters Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-cream-200 shadow-soft flex flex-col md:flex-row gap-3 items-center justify-between">
-        {/* Search */}
-        <div className="relative w-full md:w-80">
-          <Search className="w-4 h-4 text-choco-400 absolute left-3.5 top-3" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by product name or SKU..."
-            className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden focus:ring-2 focus:ring-waffle-400 bg-cream-50/30"
-          />
+      {error && (
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl text-xs font-semibold flex items-center space-x-2">
+          <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+          <span>{error}</span>
         </div>
-
-        {/* Category & Availability Dropdowns */}
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-          <div className="flex items-center space-x-1 text-xs text-choco-600">
-            <Filter className="w-3.5 h-3.5" />
-            <span>Category:</span>
-          </div>
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="px-3 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden bg-white text-choco-800"
-          >
-            <option value="all">All Categories</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.slug}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={availabilityFilter}
-            onChange={(e) => setAvailabilityFilter(e.target.value)}
-            className="px-3 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden bg-white text-choco-800"
-          >
-            <option value="all">All Availability</option>
-            <option value="AVAILABLE">AVAILABLE</option>
-            <option value="UNAVAILABLE">UNAVAILABLE</option>
-            <option value="OUT_OF_STOCK">OUT_OF_STOCK</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Products Table */}
-      <div className="bg-white rounded-2xl border border-cream-200 shadow-soft overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-cream-100/60 text-choco-700 uppercase tracking-wider font-bold">
-              <tr>
-                <th className="px-6 py-3">Product</th>
-                <th className="px-6 py-3">Category</th>
-                <th className="px-6 py-3">Price</th>
-                <th className="px-6 py-3">Tax (GST)</th>
-                <th className="px-6 py-3">Stock Qty</th>
-                <th className="px-6 py-3">Availability</th>
-                {isAdmin && <th className="px-6 py-3 text-right">Actions</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-cream-200 text-choco-900">
-              {loading ? (
-                <tr>
-                  <td colSpan={7} className="text-center py-8 text-choco-400">
-                    Loading products...
-                  </td>
-                </tr>
-              ) : products.length > 0 ? (
-                products.map((p) => {
-                  const isLowStock = p.stock_quantity <= p.low_stock_threshold;
-                  return (
-                    <tr key={p.id} className="hover:bg-cream-50/50 transition-colors">
-                      <td className="px-6 py-3.5">
-                        <div className="flex items-center space-x-3">
-                          <img
-                            src={p.image_url || 'https://images.unsplash.com/photo-1562376552-0d160a2f238d?auto=format&fit=crop&w=200&q=80'}
-                            alt={p.name}
-                            className="w-10 h-10 rounded-xl object-cover border border-cream-200 shrink-0"
-                            onError={(e: any) => {
-                              e.target.src = 'https://images.unsplash.com/photo-1562376552-0d160a2f238d?auto=format&fit=crop&w=200&q=80';
-                            }}
-                          />
-                          <div>
-                            <span className="font-bold text-choco-900 block">{p.name}</span>
-                            <span className="text-[10px] text-choco-400 font-mono">SKU: {p.sku}</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-3.5 font-medium">{p.category_name}</td>
-                      <td className="px-6 py-3.5">
-                        {p.discount_price ? (
-                          <div>
-                            <span className="font-extrabold text-waffle-600 block">
-                              {currency}{p.discount_price}
-                            </span>
-                            <span className="text-[10px] text-gray-400 line-through">
-                              {currency}{p.price}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="font-extrabold text-choco-900">{currency}{p.price}</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-3.5 text-choco-600">{p.tax_percent}%</td>
-                      <td className="px-6 py-3.5">
-                        <div className="flex items-center space-x-1.5">
-                          <span className={`font-bold ${isLowStock ? 'text-rose-600' : 'text-choco-900'}`}>
-                            {p.stock_quantity} {p.unit}
-                          </span>
-                          {isLowStock && (
-                            <span className="p-1 bg-amber-100 text-amber-700 rounded-md" title="Low Stock Warning">
-                              <AlertTriangle className="w-3 h-3" />
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-3.5">
-                        <StatusBadge status={p.availability} type="availability" />
-                      </td>
-
-                      {isAdmin && (
-                        <td className="px-6 py-3.5 text-right">
-                          <div className="flex items-center justify-end space-x-1">
-                            {/* Toggle Status */}
-                            <button
-                              onClick={() => handleToggleStatus(p.id)}
-                              className="p-1.5 text-choco-500 hover:text-choco-900 hover:bg-cream-200 rounded-lg"
-                              title="Toggle Availability"
-                            >
-                              {p.availability === 'AVAILABLE' ? (
-                                <ToggleRight className="w-4 h-4 text-emerald-600" />
-                              ) : (
-                                <ToggleLeft className="w-4 h-4 text-gray-400" />
-                              )}
-                            </button>
-
-                            {/* Change Price with History */}
-                            <button
-                              onClick={() => {
-                                setPriceProduct(p);
-                                setPriceModalOpen(true);
-                              }}
-                              className="p-1.5 text-waffle-600 hover:bg-waffle-50 rounded-lg"
-                              title="Price Management & History"
-                            >
-                              <TrendingUp className="w-4 h-4" />
-                            </button>
-
-                            {/* Edit Product */}
-                            <button
-                              onClick={() => {
-                                setEditingProduct(p);
-                                setFormModalOpen(true);
-                              }}
-                              className="p-1.5 text-choco-600 hover:bg-cream-200 rounded-lg"
-                              title="Edit Item Details"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-
-                            {/* Delete Product */}
-                            <button
-                              onClick={() => setDeleteConfirmId(p.id)}
-                              className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg"
-                              title="Delete Item"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={7} className="text-center py-8 text-choco-400">
-                    No products found matching filters.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Product Add/Edit Form Modal */}
-      {formModalOpen && (
-        <ProductFormModal
-          isOpen={formModalOpen}
-          onClose={() => setFormModalOpen(false)}
-          product={editingProduct}
-          categories={categories}
-          onSaved={fetchProducts}
-        />
       )}
 
-      {/* Price Management & History Modal */}
-      {priceModalOpen && priceProduct && (
-        <PriceHistoryModal
-          isOpen={priceModalOpen}
-          onClose={() => setPriceModalOpen(false)}
-          product={priceProduct}
-          onUpdated={fetchProducts}
-        />
+      {/* Items Cards Grid */}
+      {loading ? (
+        <div className="py-20 text-center text-xs font-bold text-choco-500">
+          Loading items list...
+        </div>
+      ) : products.length === 0 ? (
+        <div className="py-20 text-center text-xs font-bold text-choco-500">
+          No items found. Click "Add New Item" to create your first menu item.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+          {products.map((prod) => {
+            const isActive = prod.availability === 'AVAILABLE';
+
+            return (
+              <div
+                key={prod.id}
+                className={`bg-white rounded-3xl p-4 border transition-all duration-200 flex flex-col justify-between shadow-soft ${
+                  isActive ? 'border-cream-300' : 'border-rose-200 bg-rose-50/20 opacity-80'
+                }`}
+              >
+                <div>
+                  {/* Image */}
+                  <div className="aspect-square w-full rounded-2xl overflow-hidden bg-cream-100 mb-3 relative border border-cream-200">
+                    <img
+                      src={prod.image_url || 'https://images.unsplash.com/photo-1562376552-0d160a2f238d?auto=format&fit=crop&w=400&q=80'}
+                      alt={prod.name}
+                      className="w-full h-full object-cover"
+                    />
+                    {!isActive && (
+                      <div className="absolute inset-0 bg-choco-900/60 backdrop-blur-xs flex items-center justify-center text-white font-extrabold text-xs">
+                        Disabled
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Name & Price */}
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="font-extrabold text-choco-900 text-base leading-snug">
+                      {prod.name}
+                    </h3>
+                    <span className="font-black text-emerald-600 text-lg shrink-0">
+                      ₹{prod.price}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="mt-4 pt-3 border-t border-cream-200 flex items-center justify-between gap-2">
+                  <button
+                    onClick={() => handleToggleStatus(prod)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center space-x-1 border transition-colors ${
+                      isActive
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                        : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                    }`}
+                  >
+                    <Power className="w-3.5 h-3.5" />
+                    <span>{isActive ? 'Enabled' : 'Disabled'}</span>
+                  </button>
+
+                  <div className="flex items-center space-x-1">
+                    <button
+                      onClick={() => handleOpenEditModal(prod)}
+                      className="p-2 text-choco-600 hover:text-choco-900 hover:bg-cream-100 rounded-xl"
+                      title="Edit Item"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteProduct(prod.id)}
+                      className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl"
+                      title="Delete Item"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
 
-      {/* Delete Confirmation Dialog */}
-      {deleteConfirmId && (
+      {/* Add / Edit Item Modal */}
+      {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-choco-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-2xl">
-            <h3 className="font-bold text-base text-choco-900">Delete Menu Item?</h3>
-            <p className="text-xs text-choco-600">
-              Are you sure you want to delete this product? This action cannot be undone.
-            </p>
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-5 border border-cream-300">
+            <h2 className="text-xl font-black text-choco-900">
+              {editingProduct ? 'Edit Item' : 'Add New Item'}
+            </h2>
 
-            <div className="flex justify-end space-x-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setDeleteConfirmId(null)}
-                className="px-4 py-2 text-xs font-semibold text-choco-600 bg-cream-200 rounded-xl"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDelete(deleteConfirmId)}
-                className="px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs"
-              >
-                Delete Item
-              </button>
-            </div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-choco-800 uppercase tracking-wider mb-1">
+                  Item Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g., Chocolate Waffle"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-cream-300 focus:outline-hidden focus:ring-2 focus:ring-waffle-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-choco-800 uppercase tracking-wider mb-1">
+                  Price (₹) *
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  required
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  placeholder="e.g., 100"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-cream-300 focus:outline-hidden focus:ring-2 focus:ring-waffle-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-choco-800 uppercase tracking-wider mb-1">
+                  Item Image URL or File Upload
+                </label>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                    placeholder="https://images.unsplash.com/..."
+                    className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-cream-300 focus:outline-hidden focus:ring-2 focus:ring-waffle-400"
+                  />
+                  <div className="flex items-center space-x-2">
+                    <label className="cursor-pointer px-3 py-1.5 bg-cream-100 hover:bg-cream-200 text-choco-800 text-xs font-bold rounded-xl border border-cream-300 inline-flex items-center">
+                      <ImageIcon className="w-3.5 h-3.5 mr-1" />
+                      <span>{uploadingImage ? 'Uploading...' : 'Upload Image File'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageFileChange}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="isAvailableToggle"
+                  checked={isAvailable}
+                  onChange={(e) => setIsAvailable(e.target.checked)}
+                  className="w-4 h-4 rounded text-waffle-500 focus:ring-waffle-400"
+                />
+                <label htmlFor="isAvailableToggle" className="text-sm font-bold text-choco-800 cursor-pointer">
+                  Item is Available / Enabled
+                </label>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-4 border-t border-cream-200">
+                <button
+                  type="button"
+                  onClick={() => setModalOpen(false)}
+                  className="px-4 py-2.5 text-xs font-bold text-choco-700 bg-cream-100 hover:bg-cream-200 rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-5 py-2.5 text-xs font-bold text-white bg-waffle-500 hover:bg-waffle-600 rounded-xl shadow-waffle disabled:opacity-60"
+                >
+                  {submitting ? 'Saving...' : editingProduct ? 'Update Item' : 'Create Item'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
     </div>
   );
 };
+
+export default Products;

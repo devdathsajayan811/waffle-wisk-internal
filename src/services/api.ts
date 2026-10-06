@@ -10,6 +10,9 @@ import {
   BusinessSettings,
   AuditLog,
   SystemStatus,
+  MaterialRequest,
+  Cart,
+  CartItem,
 } from '../types';
 
 const API_BASE = '/api';
@@ -277,4 +280,46 @@ export const api = {
 
   // System Status
   getSystemStatus: () => request<SystemStatus>('/status'),
+
+  // Material Requests
+  getMaterialRequests: () => request<MaterialRequest[]>('/material-requests'),
+  createMaterialRequest: (data: { material: string; quantity: number; unit: string; note?: string; cart_id?: number; cart_number?: string }) =>
+    request<MaterialRequest>('/material-requests', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateMaterialRequestStatus: (id: number, status: string) =>
+    request<{ message: string; request: MaterialRequest }>(`/material-requests/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
+
+  // Multiple Carts Management
+  getCarts: (params?: { status?: string; own_carts_only?: boolean }) => {
+    const query = new URLSearchParams();
+    if (params?.status) query.append('status', params.status);
+    if (params?.own_carts_only) query.append('own_carts_only', 'true');
+    return request<Cart[]>(`/carts?${query.toString()}`);
+  },
+  getCartStatsToday: () =>
+    request<{ activeCarts: number; completedCarts: number; todayTotal: number }>('/carts/stats/today'),
+  createCart: (customerName?: string) =>
+    request<Cart>('/carts', {
+      method: 'POST',
+      body: JSON.stringify({ customer_name: customerName }),
+    }),
+  getCart: (id: number) => request<Cart>(`/carts/${id}`),
+  updateCartItems: (id: number, items: Array<{ product_id: number; quantity: number }>) =>
+    request<Cart>(`/carts/${id}/items`, {
+      method: 'PUT',
+      body: JSON.stringify({ items }),
+    }),
+  completeCart: (id: number) =>
+    request<{ cart: Cart; items: CartItem[]; receiptNumber: string; receiptData: any }>(`/carts/${id}/complete`, {
+      method: 'POST',
+    }),
+  cancelCart: (id: number) =>
+    request<{ message: string }>(`/carts/${id}/cancel`, {
+      method: 'POST',
+    }),
 };

@@ -1,18 +1,31 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
+  description?: string;
   children: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
 }
+
+const widthClasses = {
+  sm: 'max-w-sm',
+  md: 'max-w-md',
+  lg: 'max-w-lg',
+  xl: 'max-w-xl',
+  '2xl': 'max-w-2xl',
+  '3xl': 'max-w-3xl',
+  '4xl': 'max-w-4xl',
+};
 
 export const Modal: React.FC<ModalProps> = ({
   isOpen,
   onClose,
   title,
+  description,
   children,
   maxWidth = 'md',
 }) => {
@@ -32,44 +45,29 @@ export const Modal: React.FC<ModalProps> = ({
 
   if (!isOpen) return null;
 
-  const widthClasses = {
-    sm: 'max-w-sm',
-    md: 'max-w-md',
-    lg: 'max-w-lg',
-    xl: 'max-w-xl',
-    '2xl': 'max-w-2xl',
-    '3xl': 'max-w-3xl',
-    '4xl': 'max-w-4xl',
-  };
+  // Portal to body: animated ancestors (transform) would otherwise trap position: fixed.
+  return createPortal(
+    <div className="fixed inset-0 z-50 overflow-y-auto" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="fixed inset-0 bg-choco-900/50 backdrop-blur-sm animate-fade-in" onClick={onClose} />
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-choco-900/60 backdrop-blur-xs transition-opacity"
-        onClick={onClose}
-      />
-
-      {/* Modal Dialog Container */}
-      <div className="flex min-h-full items-center justify-center p-4 text-center">
+      <div className="flex min-h-full items-end justify-center p-0 sm:items-center sm:p-4">
         <div
-          className={`w-full ${widthClasses[maxWidth]} transform overflow-hidden rounded-2xl bg-white text-left align-middle shadow-2xl transition-all border border-cream-200 z-10 my-8`}
+          className={`relative z-10 w-full ${widthClasses[maxWidth]} overflow-hidden rounded-t-3xl border border-cream-300/70 bg-white text-left shadow-soft-lg animate-scale-in sm:my-8 sm:rounded-2xl`}
         >
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-cream-200 bg-cream-50/50">
-            <h3 className="text-lg font-bold text-choco-900 font-sans tracking-tight">{title}</h3>
-            <button
-              onClick={onClose}
-              className="rounded-lg p-1.5 text-choco-400 hover:bg-cream-200 hover:text-choco-800 transition-colors"
-            >
-              <X className="w-5 h-5" />
+          <div className="flex items-start justify-between gap-4 border-b border-cream-200 px-6 py-5">
+            <div className="min-w-0">
+              <h3 className="font-display text-lg font-semibold leading-snug text-choco-900">{title}</h3>
+              {description && <p className="mt-0.5 text-sm text-choco-400">{description}</p>}
+            </div>
+            <button onClick={onClose} className="icon-btn -mr-2 -mt-1 shrink-0" aria-label="Close dialog">
+              <X className="h-5 w-5" />
             </button>
           </div>
 
-          {/* Content Body */}
-          <div className="p-6 max-h-[calc(100vh-160px)] overflow-y-auto">{children}</div>
+          <div className="max-h-[calc(100dvh-160px)] overflow-y-auto px-6 py-5">{children}</div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

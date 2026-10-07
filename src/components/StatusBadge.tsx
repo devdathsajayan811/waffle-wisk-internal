@@ -5,60 +5,57 @@ interface StatusBadgeProps {
   type?: 'availability' | 'payment' | 'order' | 'stock' | 'role' | 'generic';
 }
 
-export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, type = 'generic' }) => {
-  let badgeStyle = 'bg-gray-100 text-gray-700 border-gray-200';
+const LABELS: Record<string, string> = {
+  AVAILABLE: 'Available',
+  UNAVAILABLE: 'Unavailable',
+  OUT_OF_STOCK: 'Out of stock',
+  LOW_STOCK: 'Low stock',
+  PAID: 'Paid',
+  PENDING: 'Pending',
+  FAILED: 'Failed',
+  REFUNDED: 'Refunded',
+  COMPLETED: 'Completed',
+  ACTIVE: 'Active',
+  HOLD: 'On hold',
+  ADMIN: 'Admin',
+  STAFF: 'Staff',
+  DISABLED: 'Disabled',
+};
 
-  const normalized = status.toUpperCase();
-
-  if (type === 'availability') {
-    if (normalized === 'AVAILABLE') {
-      badgeStyle = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-    } else if (normalized === 'OUT_OF_STOCK') {
-      badgeStyle = 'bg-rose-50 text-rose-700 border-rose-200';
-    } else {
-      badgeStyle = 'bg-amber-50 text-amber-700 border-amber-200';
-    }
-  } else if (type === 'payment') {
-    if (normalized === 'PAID') {
-      badgeStyle = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-    } else if (normalized === 'PENDING') {
-      badgeStyle = 'bg-amber-50 text-amber-700 border-amber-200';
-    } else if (normalized === 'FAILED') {
-      badgeStyle = 'bg-rose-50 text-rose-700 border-rose-200';
-    } else if (normalized === 'REFUNDED') {
-      badgeStyle = 'bg-purple-50 text-purple-700 border-purple-200';
-    }
-  } else if (type === 'order') {
-    if (normalized === 'COMPLETED') {
-      badgeStyle = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-    } else if (normalized === 'HOLD') {
-      badgeStyle = 'bg-sky-50 text-sky-700 border-sky-200';
-    } else if (normalized === 'REFUNDED') {
-      badgeStyle = 'bg-purple-50 text-purple-700 border-purple-200';
-    } else {
-      badgeStyle = 'bg-rose-50 text-rose-700 border-rose-200';
-    }
-  } else if (type === 'role') {
-    if (normalized === 'ADMIN') {
-      badgeStyle = 'bg-waffle-100 text-waffle-800 border-waffle-300 font-bold';
-    } else {
-      badgeStyle = 'bg-blue-50 text-blue-700 border-blue-200';
-    }
-  } else if (type === 'stock') {
-    if (normalized === 'LOW_STOCK' || normalized === 'LOW STOCK') {
-      badgeStyle = 'bg-amber-100 text-amber-800 border-amber-300 font-bold animate-pulse';
-    } else if (normalized === 'OUT_OF_STOCK') {
-      badgeStyle = 'bg-rose-100 text-rose-800 border-rose-300 font-bold';
-    } else {
-      badgeStyle = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-    }
+const resolveClass = (normalized: string, type: StatusBadgeProps['type']): string => {
+  switch (type) {
+    case 'availability':
+      if (normalized === 'AVAILABLE') return 'badge-success';
+      if (normalized === 'OUT_OF_STOCK') return 'badge-danger';
+      return 'badge-warning';
+    case 'payment':
+      if (normalized === 'PAID') return 'badge-success';
+      if (normalized === 'PENDING') return 'badge-warning';
+      if (normalized === 'FAILED') return 'badge-danger';
+      return 'badge-neutral';
+    case 'order':
+      if (normalized === 'COMPLETED') return 'badge-success';
+      if (normalized === 'ACTIVE') return 'badge-waffle';
+      if (normalized === 'HOLD') return 'badge-info';
+      if (normalized === 'REFUNDED') return 'badge-neutral';
+      return 'badge-danger';
+    case 'role':
+      return normalized === 'ADMIN' ? 'badge-waffle' : 'badge-neutral';
+    case 'stock':
+      if (normalized === 'LOW_STOCK' || normalized === 'LOW STOCK') return 'badge-warning';
+      if (normalized === 'OUT_OF_STOCK') return 'badge-danger';
+      return 'badge-success';
+    default:
+      return 'badge-neutral';
   }
+};
 
+export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, type = 'generic' }) => {
+  const normalized = status.toUpperCase();
   return (
-    <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${badgeStyle}`}
-    >
-      {status}
+    <span className={resolveClass(normalized, type)}>
+      <span className="dot opacity-70" />
+      {LABELS[normalized] ?? status}
     </span>
   );
 };

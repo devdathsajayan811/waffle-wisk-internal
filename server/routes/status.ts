@@ -1,31 +1,29 @@
 import { Router } from 'express';
-import { dbQuery } from '../db.js';
+import { getDatabase } from '../db/index.js';
 
 const router = Router();
-
 const startTime = Date.now();
 
-// System Connectivity & Health Check
-router.get('/', (_req, res) => {
-  let dbStatus = 'Disconnected';
+router.get('/', async (_req, res) => {
+  let databaseStatus: 'Connected' | 'Error' = 'Error';
+  let databaseDurable = false;
   try {
-    const test = dbQuery.get('SELECT 1 as alive');
-    if (test && test.alive === 1) {
-      dbStatus = 'Connected';
-    }
-  } catch (err) {
-    dbStatus = 'Error';
+    const database = await getDatabase();
+    const row = await database.get<{ alive: number }>('SELECT 1 AS alive');
+    if (row?.alive === 1) databaseStatus = 'Connected';
+    databaseDurable = database.durable;
+  } catch {
+    databaseStatus = 'Error';
   }
 
-  const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
-
   return res.json({
-    internetStatus: 'Connected', // Browser/Client will combine with window.navigator.onLine
-    databaseStatus: dbStatus,
+    internetStatus: 'Connected',
+    databaseStatus,
+    databaseDurable,
     serverStatus: 'Online',
     lastSyncTime: new Date().toISOString(),
-    applicationHealth: dbStatus === 'Connected' ? 'Healthy' : 'Warning',
-    uptimeSeconds,
+    applicationHealth: databaseStatus !== 'Connected' ? 'Error' : databaseDurable ? 'Healthy' : 'Warning',
+    uptimeSeconds: Math.floor((Date.now() - startTime) / 1000),
   });
 });
 

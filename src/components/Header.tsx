@@ -1,95 +1,90 @@
 import React, { useState } from 'react';
-import { Menu, Wifi, WifiOff, Key, User as UserIcon } from 'lucide-react';
+import { Menu, Wifi, WifiOff, KeyRound, ChevronRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSystemStatus } from '../context/SystemStatusContext';
 import { ChangePasswordModal } from './ChangePasswordModal';
 
 interface HeaderProps {
+  section: string;
   title: string;
   setMobileOpen: (open: boolean) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ title, setMobileOpen }) => {
-  const { user, isAdmin } = useAuth();
+export const Header: React.FC<HeaderProps> = ({ section, title, setMobileOpen }) => {
+  const { user } = useAuth();
   const { isOnline, status, showBanner, bannerMessage } = useSystemStatus();
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
+  const healthy = isOnline && status.databaseStatus === 'Connected';
+  const today = new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+
   return (
     <>
-      <header className="sticky top-0 z-30 bg-cream-50/90 backdrop-blur-md border-b border-cream-300/60 px-4 lg:px-8 py-3.5 flex items-center justify-between shadow-xs">
-        {/* Left Title & Mobile Menu Trigger */}
-        <div className="flex items-center space-x-3">
+      <header className="relative z-30 flex h-16 shrink-0 items-center justify-between gap-4 border-b border-cream-300/60 bg-cream-50/80 px-4 backdrop-blur-xl sm:px-6 lg:px-10">
+        <div className="flex min-w-0 items-center gap-3">
           <button
             onClick={() => setMobileOpen(true)}
-            className="lg:hidden p-2 rounded-xl text-choco-700 hover:bg-cream-200 transition-colors"
-            aria-label="Open Navigation Menu"
+            className="icon-btn -ml-1 lg:hidden"
+            aria-label="Open navigation menu"
           >
-            <Menu className="w-6 h-6" />
+            <Menu className="h-5 w-5" />
           </button>
-          <div>
-            <h1 className="text-xl font-bold text-choco-900 font-sans tracking-tight">{title}</h1>
-            <p className="text-xs text-choco-500 hidden sm:block">Waffle Cart Management & POS System</p>
-          </div>
+          <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
+            <span className="hidden text-choco-400 sm:inline">{section}</span>
+            <ChevronRight className="hidden h-3.5 w-3.5 text-choco-300 sm:inline" />
+            <span className="truncate font-semibold text-choco-900">{title}</span>
+          </nav>
         </div>
 
-        {/* Right System Indicators & Profile */}
-        <div className="flex items-center space-x-3">
-          {/* Online/Offline Status Indicator */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          <span className="hidden text-xs font-medium text-choco-400 md:inline">{today}</span>
+
           <div
-            className={`flex items-center px-3 py-1.5 rounded-full text-xs font-medium border shadow-2xs ${
-              isOnline && status.databaseStatus === 'Connected'
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : 'bg-amber-50 text-amber-700 border-amber-200'
+            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${
+              healthy
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-amber-200 bg-amber-50 text-amber-700'
             }`}
+            title={healthy ? 'Connected to server and database' : 'Connection degraded'}
           >
-            {isOnline ? (
-              <Wifi className="w-3.5 h-3.5 mr-1.5 text-emerald-600 animate-pulse" />
-            ) : (
-              <WifiOff className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
-            )}
-            <span className="font-semibold">{isOnline ? 'Online' : 'Offline Mode'}</span>
+            <span className="relative flex h-2 w-2">
+              {healthy && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />}
+              <span className={`relative inline-flex h-2 w-2 rounded-full ${healthy ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+            </span>
+            <span className="hidden sm:inline">{isOnline ? 'Online' : 'Offline'}</span>
           </div>
 
-          {/* Change Password Quick Button */}
+          <div className="mx-1 hidden h-6 w-px bg-cream-300 sm:block" />
+
           <button
             onClick={() => setChangePasswordOpen(true)}
-            className="hidden sm:flex items-center px-3 py-1.5 rounded-xl text-xs font-medium text-choco-700 bg-cream-200/80 hover:bg-cream-300 border border-cream-300 transition-colors"
-            title="Change Password"
+            className="group flex items-center gap-2.5 rounded-xl py-1 pl-1 pr-2 transition-colors hover:bg-cream-200/70"
+            title="Change password"
           >
-            <Key className="w-3.5 h-3.5 mr-1.5 text-waffle-600" />
-            Password
-          </button>
-
-          {/* User Profile Avatar */}
-          <div className="flex items-center space-x-2 pl-2 border-l border-cream-300">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-choco-600 to-choco-800 text-cream-50 flex items-center justify-center font-bold text-xs shadow-xs">
-              {user?.name ? user.name.charAt(0).toUpperCase() : <UserIcon className="w-4 h-4" />}
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-choco-500 to-choco-700 font-display text-xs font-semibold text-cream-50 shadow-xs">
+              {user?.name ? user.name.charAt(0).toUpperCase() : '?'}
             </div>
-            <div className="hidden md:block text-left leading-tight">
+            <div className="hidden text-left leading-tight md:block">
               <span className="block text-xs font-semibold text-choco-900">{user?.name}</span>
-              <span className="block text-[10px] text-choco-500 font-mono">
-                {isAdmin ? 'Administrator' : 'Staff Member'}
+              <span className="flex items-center gap-1 text-2xs text-choco-400 group-hover:text-waffle-600">
+                <KeyRound className="h-3 w-3" /> Change password
               </span>
             </div>
-          </div>
+          </button>
         </div>
       </header>
 
-      {/* Non-blocking Offline Banner */}
       {showBanner && (
         <div
-          className={`px-4 py-2 text-xs font-medium text-center flex items-center justify-center space-x-2 transition-all duration-300 ${
-            isOnline
-              ? 'bg-emerald-600 text-white'
-              : 'bg-amber-600 text-white shadow-md'
+          className={`flex items-center justify-center gap-2 px-4 py-2 text-xs font-medium text-white animate-fade-in ${
+            isOnline ? 'bg-emerald-600' : 'bg-amber-600'
           }`}
         >
-          {isOnline ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+          {isOnline ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
           <span>{bannerMessage}</span>
         </div>
       )}
 
-      {/* Change Password Modal */}
       {changePasswordOpen && (
         <ChangePasswordModal isOpen={changePasswordOpen} onClose={() => setChangePasswordOpen(false)} />
       )}

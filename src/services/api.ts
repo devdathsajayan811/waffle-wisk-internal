@@ -12,7 +12,9 @@ import {
   SystemStatus,
   MaterialRequest,
   Cart,
-  CartItem,
+  CheckoutPayload,
+  OrderItem,
+  ReceiptData,
 } from '../types';
 
 const API_BASE = '/api';
@@ -55,12 +57,13 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
   const isLoginRequest = endpoint.startsWith('/auth/login');
 
-  if ((response.status === 401 || response.status === 403) && !isLoginRequest) {
+  // 401 means the session is gone; 403 is a permission error and is shown to the user instead.
+  if (response.status === 401 && !isLoginRequest) {
     removeAuthToken();
     if (window.location.pathname !== '/login') {
       window.location.href = '/login';
     }
-    throw new Error('Session expired or unauthorized');
+    throw new Error('Session expired. Please sign in again.');
   }
 
   const contentType = response.headers.get('content-type') || '';
@@ -104,7 +107,7 @@ export const api = {
     }),
 
   forgotPassword: (email: string) =>
-    request<{ message: string; devHint?: string }>('/auth/forgot-password', {
+    request<{ message: string }>('/auth/forgot-password', {
       method: 'POST',
       body: JSON.stringify({ email }),
     }),
@@ -314,10 +317,14 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ items }),
     }),
-  completeCart: (id: number) =>
-    request<{ cart: Cart; items: CartItem[]; receiptNumber: string; receiptData: any }>(`/carts/${id}/complete`, {
-      method: 'POST',
-    }),
+  completeCart: (id: number, payment: CheckoutPayload) =>
+    request<{ cart: Cart; order: Order; items: OrderItem[]; receiptNumber: string; receiptData: ReceiptData }>(
+      `/carts/${id}/complete`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payment),
+      }
+    ),
   cancelCart: (id: number) =>
     request<{ message: string }>(`/carts/${id}/cancel`, {
       method: 'POST',

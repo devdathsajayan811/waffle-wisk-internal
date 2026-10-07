@@ -2,7 +2,7 @@
   "version": 2,
   "functions": {
     "api/index.ts": {
-      "includeFiles": "{node_modules/sql.js/dist/**,waffle_wisk.db}"
+      "includeFiles": "node_modules/sql.js/dist/**"
     }
   },
   "rewrites": [

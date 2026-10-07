@@ -1,7 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Store, Receipt, AlertCircle, Save, CheckCircle2 } from 'lucide-react';
+import { Store, Receipt, Save, Globe2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+import { Alert, PageHeader } from '../components/ui';
+
+const Section: React.FC<{
+  icon: React.FC<{ className?: string }>;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}> = ({ icon: Icon, title, description, children }) => (
+  <section className="grid grid-cols-1 gap-4 lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-10">
+    <div className="lg:pt-5">
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-waffle-50 text-waffle-600 ring-1 ring-inset ring-waffle-200/70">
+          <Icon className="h-4 w-4" />
+        </div>
+        <h2 className="font-display text-base font-semibold text-choco-900">{title}</h2>
+      </div>
+      <p className="mt-2 text-sm text-choco-400">{description}</p>
+    </div>
+    <div className="card card-body space-y-4">{children}</div>
+  </section>
+);
 
 export const SettingsPage: React.FC = () => {
   const { settings, updateSettingsState } = useAuth();
@@ -16,6 +37,7 @@ export const SettingsPage: React.FC = () => {
   const [receiptFooter, setReceiptFooter] = useState('');
   const [defaultGstPercent, setDefaultGstPercent] = useState<number>(5.0);
   const [lowStockThresholdDefault, setLowStockThresholdDefault] = useState<number>(5);
+  const [timezone, setTimezone] = useState('Asia/Kolkata');
 
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
@@ -33,6 +55,7 @@ export const SettingsPage: React.FC = () => {
       setReceiptFooter(settings.receipt_footer || '');
       setDefaultGstPercent(settings.default_gst_percent !== undefined ? settings.default_gst_percent : 5.0);
       setLowStockThresholdDefault(settings.low_stock_threshold_default || 5);
+      setTimezone(settings.timezone || 'Asia/Kolkata');
     }
   }, [settings]);
 
@@ -54,10 +77,11 @@ export const SettingsPage: React.FC = () => {
         receipt_footer: receiptFooter,
         default_gst_percent: defaultGstPercent,
         low_stock_threshold_default: lowStockThresholdDefault,
+        timezone: timezone.trim(),
       });
 
       updateSettingsState(updated);
-      setSuccess('Business settings updated successfully!');
+      setSuccess('Settings saved.');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.message || 'Failed to update settings');
@@ -67,165 +91,151 @@ export const SettingsPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl space-y-6">
-      <div>
-        <h2 className="text-lg font-bold text-choco-900">Admin Portal Settings</h2>
-        <p className="text-xs text-choco-500">Configure cart business identity, receipt format, tax rules, and POS defaults</p>
-      </div>
+    <div className="mx-auto w-full max-w-5xl space-y-8 animate-fade-up">
+      <PageHeader
+        eyebrow="Administration"
+        title="Settings"
+        description="Your business identity, receipt layout, tax rules and POS defaults."
+      />
 
-      {success && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold rounded-2xl flex items-center space-x-2">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-          <span>{success}</span>
-        </div>
-      )}
+      {success && <Alert tone="success">{success}</Alert>}
+      {error && <Alert tone="error">{error}</Alert>}
 
-      {error && (
-        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium rounded-2xl flex items-center space-x-2">
-          <AlertCircle className="w-5 h-5 text-rose-500 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Section 1: Business Identity */}
-        <div className="bg-white p-6 rounded-2xl border border-cream-200 shadow-soft space-y-4">
-          <h3 className="font-bold text-sm text-choco-900 flex items-center border-b border-cream-200 pb-3">
-            <Store className="w-4 h-4 mr-2 text-waffle-600" /> Business Information
-          </h3>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <form onSubmit={handleSubmit} className="space-y-8">
+        <Section icon={Store} title="Business" description="Printed at the top of every receipt and shown in the sidebar.">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-xs font-semibold text-choco-700 mb-1">Business Name *</label>
-              <input
-                type="text"
-                required
-                value={businessName}
-                onChange={(e) => setBusinessName(e.target.value)}
-                className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
-              />
+              <label className="label" htmlFor="set-name">Business name</label>
+              <input id="set-name" type="text" required value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="input" />
             </div>
-
             <div>
-              <label className="block text-xs font-semibold text-choco-700 mb-1">Logo Image URL</label>
+              <label className="label" htmlFor="set-logo">Logo URL</label>
               <input
+                id="set-logo"
                 type="text"
                 value={logoUrl}
                 onChange={(e) => setLogoUrl(e.target.value)}
                 placeholder="/waffle_logo.png"
-                className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+                className="input"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-choco-700 mb-1">Cart Address / Stall Location</label>
+            <label className="label" htmlFor="set-address">Cart address</label>
             <input
+              id="set-address"
               type="text"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="Stall #14, Food Street, City Center"
-              className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+              placeholder="Stall 14, Food Street, Bandra West"
+              className="input"
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
-              <label className="block text-xs font-semibold text-choco-700 mb-1">Contact Phone</label>
-              <input
-                type="text"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
-              />
+              <label className="label" htmlFor="set-phone">Phone</label>
+              <input id="set-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="input" />
             </div>
-
             <div>
-              <label className="block text-xs font-semibold text-choco-700 mb-1">Contact Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
-              />
+              <label className="label" htmlFor="set-email">Email</label>
+              <input id="set-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" />
             </div>
-
             <div>
-              <label className="block text-xs font-semibold text-choco-700 mb-1">GSTIN Number</label>
+              <label className="label" htmlFor="set-gstin">GSTIN</label>
               <input
+                id="set-gstin"
                 type="text"
                 value={gstin}
                 onChange={(e) => setGstin(e.target.value)}
                 placeholder="27AABCT3518Q1ZB"
-                className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden font-mono"
+                className="input font-mono text-[0.8125rem] uppercase"
               />
             </div>
           </div>
-        </div>
+        </Section>
 
-        {/* Section 2: Tax & Receipt Settings */}
-        <div className="bg-white p-6 rounded-2xl border border-cream-200 shadow-soft space-y-4">
-          <h3 className="font-bold text-sm text-choco-900 flex items-center border-b border-cream-200 pb-3">
-            <Receipt className="w-4 h-4 mr-2 text-waffle-600" /> Tax & Receipt Layout
-          </h3>
+        <div className="h-px bg-cream-300/70" />
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Section icon={Receipt} title="Tax & receipts" description="Applied at checkout. Changes affect new orders only.">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
-              <label className="block text-xs font-semibold text-choco-700 mb-1">Currency Symbol</label>
-              <input
-                type="text"
-                value={currencySymbol}
-                onChange={(e) => setCurrencySymbol(e.target.value)}
-                className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden font-bold"
-              />
+              <label className="label" htmlFor="set-currency">Currency symbol</label>
+              <input id="set-currency" type="text" value={currencySymbol} onChange={(e) => setCurrencySymbol(e.target.value)} className="input" />
             </div>
-
             <div>
-              <label className="block text-xs font-semibold text-choco-700 mb-1">Default GST Tax (%)</label>
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                value={defaultGstPercent}
-                onChange={(e) => setDefaultGstPercent(Number(e.target.value))}
-                className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden font-bold"
-              />
+              <label className="label" htmlFor="set-gst">Default GST</label>
+              <div className="relative">
+                <input
+                  id="set-gst"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={defaultGstPercent}
+                  onChange={(e) => setDefaultGstPercent(Number(e.target.value))}
+                  className="input pr-9 tabular-nums"
+                />
+                <span className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-choco-400">%</span>
+              </div>
             </div>
-
             <div>
-              <label className="block text-xs font-semibold text-choco-700 mb-1">Default Low-Stock Threshold</label>
+              <label className="label" htmlFor="set-lowstock">Low-stock alert</label>
               <input
+                id="set-lowstock"
                 type="number"
                 min="1"
                 value={lowStockThresholdDefault}
                 onChange={(e) => setLowStockThresholdDefault(Number(e.target.value))}
-                className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden font-bold"
+                className="input tabular-nums"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-choco-700 mb-1">Receipt Footer Message</label>
-            <input
-              type="text"
+            <label className="label" htmlFor="set-footer">Receipt footer</label>
+            <textarea
+              id="set-footer"
+              rows={2}
               value={receiptFooter}
               onChange={(e) => setReceiptFooter(e.target.value)}
-              placeholder="Thank you for enjoying our freshly baked waffles! Visit us again soon."
-              className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+              placeholder="Thanks for stopping by. See you again soon."
+              className="input resize-none"
             />
           </div>
-        </div>
+        </Section>
 
-        {/* Save Button */}
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-6 py-3 bg-gradient-to-r from-waffle-500 to-waffle-600 hover:from-waffle-600 hover:to-waffle-700 text-white font-bold text-xs rounded-xl shadow-waffle transition-all flex items-center space-x-2 disabled:opacity-50"
-          >
-            <Save className="w-4 h-4" />
-            <span>{loading ? 'Saving Changes...' : 'Save Settings'}</span>
-          </button>
+        <div className="h-px bg-cream-300/70" />
+
+        <Section icon={Globe2} title="Region" description="Decides when “today” starts for sales totals and daily charts.">
+          <div>
+            <label className="label" htmlFor="set-timezone">Timezone</label>
+            <input
+              id="set-timezone"
+              type="text"
+              list="timezone-options"
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              placeholder="Asia/Kolkata"
+              className="input font-mono text-[0.8125rem] sm:max-w-xs"
+            />
+            <datalist id="timezone-options">
+              {['Asia/Kolkata', 'Asia/Dubai', 'Asia/Singapore', 'Europe/London', 'America/New_York', 'UTC'].map((tz) => (
+                <option key={tz} value={tz} />
+              ))}
+            </datalist>
+            <p className="field-hint">IANA timezone name, for example Asia/Kolkata.</p>
+          </div>
+        </Section>
+
+        <div className="sticky bottom-0 z-10 -mx-4 border-t border-cream-300/70 bg-cream-50/85 px-4 py-4 backdrop-blur-xl sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+            <p className="hidden text-sm text-choco-400 sm:block">Changes apply to everyone as soon as you save.</p>
+            <button type="submit" disabled={loading} className="btn-primary ml-auto">
+              <Save className="h-4 w-4" />
+              {loading ? 'Saving…' : 'Save settings'}
+            </button>
+          </div>
         </div>
       </form>
     </div>

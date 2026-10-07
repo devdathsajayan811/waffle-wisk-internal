@@ -38,6 +38,7 @@ export interface Product {
   low_stock_threshold: number;
   unit: string;
   availability: ProductAvailability;
+  is_archived?: number;
   created_at?: string;
   updated_at?: string;
 }
@@ -130,10 +131,26 @@ export interface ReceiptData {
   subtotal: number;
   discount: number;
   tax: number;
+  taxPercent?: number;
   grandTotal: number;
-  paymentMethod: PaymentMethod;
-  paymentStatus: PaymentStatus;
+  /** Legacy cart receipts carry 'NOT_RECORDED'. */
+  paymentMethod: PaymentMethod | 'NOT_RECORDED';
+  paymentStatus: PaymentStatus | 'COMPLETED';
+  paymentRef?: string;
+  amountReceived?: number;
+  changeReturned?: number;
   staffName: string;
+  notes?: string;
+}
+
+export interface CheckoutPayload {
+  payment_method: PaymentMethod;
+  payment_status?: 'PAID' | 'PENDING';
+  discount?: number;
+  amount_received?: number;
+  payment_ref?: string;
+  customer_name?: string;
+  customer_phone?: string;
   notes?: string;
 }
 
@@ -164,6 +181,7 @@ export interface BusinessSettings {
   receipt_footer: string;
   default_gst_percent: number;
   low_stock_threshold_default: number;
+  timezone: string;
   updated_at?: string;
 }
 
@@ -181,6 +199,8 @@ export interface AuditLog {
 export interface SystemStatus {
   internetStatus: 'Connected' | 'Offline';
   databaseStatus: 'Connected' | 'Disconnected' | 'Error';
+  /** False when the server stores data on instance-local disk that is wiped on restart. */
+  databaseDurable?: boolean;
   serverStatus: 'Online' | 'Offline';
   lastSyncTime: string;
   applicationHealth: 'Healthy' | 'Warning' | 'Error';
@@ -227,5 +247,5 @@ export interface Cart {
   completed_at?: string;
   items?: CartItem[];
   itemCount?: number;
-  receipt?: any;
+  receipt?: Receipt | null;
 }

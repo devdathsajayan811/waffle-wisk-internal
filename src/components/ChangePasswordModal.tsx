@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Modal } from './Modal';
 import { api } from '../services/api';
+import { Alert } from './ui';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -64,70 +65,61 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({ isOpen
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Change Password">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Change password"
+      description="Use at least 8 characters with an uppercase letter and a number."
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && (
-          <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl">
-            {error}
-          </div>
-        )}
-
-        {success && (
-          <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold rounded-xl">
-            {success}
-          </div>
-        )}
+        {error && <Alert tone="error">{error}</Alert>}
+        {success && <Alert tone="success">{success}</Alert>}
 
         <div>
-          <label className="block text-xs font-semibold text-choco-700 mb-1">Current Password</label>
+          <label className="label" htmlFor="cp-current">Current password</label>
           <input
+            id="cp-current"
             type="password"
             required
+            autoComplete="current-password"
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
-            className="w-full px-3.5 py-2 text-sm rounded-xl border border-cream-300 focus:outline-hidden focus:ring-2 focus:ring-waffle-400"
-            placeholder="Enter current password"
+            className="input"
           />
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-choco-700 mb-1">New Password</label>
+          <label className="label" htmlFor="cp-new">New password</label>
           <input
+            id="cp-new"
             type="password"
             required
+            autoComplete="new-password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
-            className="w-full px-3.5 py-2 text-sm rounded-xl border border-cream-300 focus:outline-hidden focus:ring-2 focus:ring-waffle-400"
-            placeholder="At least 8 chars, 1 uppercase, 1 number"
+            className="input"
           />
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-choco-700 mb-1">Confirm New Password</label>
+          <label className="label" htmlFor="cp-confirm">Confirm new password</label>
           <input
+            id="cp-confirm"
             type="password"
             required
+            autoComplete="new-password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full px-3.5 py-2 text-sm rounded-xl border border-cream-300 focus:outline-hidden focus:ring-2 focus:ring-waffle-400"
-            placeholder="Re-enter new password"
+            className="input"
           />
         </div>
 
-        <div className="pt-3 flex justify-end space-x-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-choco-600 bg-cream-200 hover:bg-cream-300 rounded-xl"
-          >
+        <div className="-mx-6 -mb-5 mt-2 flex justify-end gap-2 border-t border-cream-200 bg-cream-50/60 px-6 py-4">
+          <button type="button" onClick={onClose} className="btn-secondary">
             Cancel
           </button>
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-5 py-2 text-xs font-semibold text-white bg-waffle-500 hover:bg-waffle-600 rounded-xl shadow-soft disabled:opacity-50"
-          >
-            {loading ? 'Updating...' : 'Update Password'}
+          <button type="submit" disabled={loading} className="btn-primary">
+            {loading ? 'Updating…' : 'Update password'}
           </button>
         </div>
       </form>

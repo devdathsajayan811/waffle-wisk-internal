@@ -6,13 +6,22 @@ import {
   ArrowDownLeft,
   AlertTriangle,
   History,
-  Filter,
-  Search,
+  Pencil,
+  Wallet,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { InventoryItem, InventoryMovement } from '../types';
 import { Modal } from '../components/Modal';
+import { Alert, EmptyState, PageHeader, SearchInput, SkeletonRows, StatCard } from '../components/ui';
+
+const CATEGORIES = [
+  { value: 'Ingredients', label: 'Ingredients' },
+  { value: 'Syrups', label: 'Syrups & sauces' },
+  { value: 'Toppings', label: 'Toppings' },
+  { value: 'Packaging', label: 'Packaging' },
+  { value: 'Consumables', label: 'Consumables' },
+];
 
 export const Inventory: React.FC = () => {
   const { isAdmin, settings } = useAuth();
@@ -86,6 +95,7 @@ export const Inventory: React.FC = () => {
     setCostPerUnit(100);
     setSupplier('');
     setExpiryDate('');
+    setFormError(null);
     setItemModalOpen(true);
   };
 
@@ -99,6 +109,7 @@ export const Inventory: React.FC = () => {
     setCostPerUnit(item.cost_per_unit);
     setSupplier(item.supplier || '');
     setExpiryDate(item.expiry_date || '');
+    setFormError(null);
     setItemModalOpen(true);
   };
 
@@ -170,453 +181,446 @@ export const Inventory: React.FC = () => {
     setMovReason(type === 'IN' ? 'Stock Purchase' : 'Damaged / Waste');
     setMovCost(type === 'IN' ? item.cost_per_unit * 1 : 0);
     setMovNotes('');
+    setFormError(null);
     setMovementModalOpen(true);
   };
 
+  const lowCount = inventory.filter((i) => i.current_quantity <= i.minimum_stock).length;
+  const stockValue = inventory.reduce((sum, i) => sum + i.current_quantity * i.cost_per_unit, 0);
+  const colCount = isAdmin ? 6 : 5;
+
   return (
-    <div className="space-y-6">
-      {/* Header & Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-bold text-choco-900">Inventory & Raw Material Storage</h2>
-          <p className="text-xs text-choco-500">Track waffle premix, syrups, packaging, toppings, and stock movements</p>
-        </div>
+    <div className="page">
+      <PageHeader
+        eyebrow="Catalog & stock"
+        title="Inventory"
+        description="Premix, syrups, toppings and packaging on hand, with every stock movement logged."
+        actions={
+          isAdmin && (
+            <button onClick={handleOpenNewItem} className="btn-primary">
+              <Plus className="h-4 w-4" strokeWidth={2.5} />
+              Add material
+            </button>
+          )
+        }
+      />
 
-        {isAdmin && (
-          <button
-            onClick={handleOpenNewItem}
-            className="px-4 py-2.5 bg-gradient-to-r from-waffle-500 to-waffle-600 hover:from-waffle-600 hover:to-waffle-700 text-white font-bold text-xs rounded-xl shadow-waffle flex items-center space-x-2 shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Storage Material</span>
-          </button>
-        )}
-      </div>
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard label="Materials tracked" value={inventory.length} icon={Boxes} tone="choco" loading={loading} />
+        <StatCard
+          label="Below minimum"
+          value={lowCount}
+          icon={AlertTriangle}
+          tone={lowCount > 0 ? 'rose' : 'emerald'}
+          loading={loading}
+          hint={lowCount > 0 ? 'Restock soon' : 'All levels healthy'}
+        />
+        <StatCard
+          label="Stock value"
+          value={`${currency}${Math.round(stockValue).toLocaleString('en-IN')}`}
+          icon={Wallet}
+          tone="waffle"
+          loading={loading}
+          hint="Quantity × cost per unit"
+        />
+      </section>
 
-      {/* Filter Toolbar */}
-      <div className="bg-white p-4 rounded-2xl border border-cream-200 shadow-soft flex flex-col md:flex-row gap-3 items-center justify-between">
-        <div className="relative w-full md:w-80">
-          <Search className="w-4 h-4 text-choco-400 absolute left-3.5 top-3" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search material or supplier..."
-            className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden focus:ring-2 focus:ring-waffle-400 bg-cream-50/30"
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+      <div className="toolbar">
+        <SearchInput value={searchTerm} onChange={setSearchTerm} placeholder="Search material or supplier" className="md:w-80" />
+        <div className="flex flex-wrap items-center gap-2">
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="px-3 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden bg-white text-choco-800"
+            className="select input-sm w-auto min-w-[11rem]"
+            aria-label="Filter by category"
           >
-            <option value="all">All Categories</option>
-            <option value="Ingredients">Ingredients (Premix/Flour)</option>
-            <option value="Syrups">Syrups & Sauces</option>
-            <option value="Toppings">Toppings & Sprinkles</option>
-            <option value="Packaging">Packaging & Trays</option>
-            <option value="Consumables">Consumables</option>
+            <option value="all">All categories</option>
+            {CATEGORIES.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
           </select>
-
           <button
             onClick={() => setLowStockOnly(!lowStockOnly)}
-            className={`px-3 py-2 rounded-xl text-xs font-bold transition-colors flex items-center space-x-1 ${
+            aria-pressed={lowStockOnly}
+            className={`btn btn-sm h-[2.125rem] ${
               lowStockOnly
-                ? 'bg-amber-500 text-white shadow-xs'
-                : 'bg-cream-200 text-choco-700 hover:bg-cream-300'
+                ? 'border border-amber-300 bg-amber-50 text-amber-800'
+                : 'border border-cream-300 bg-white text-choco-500 hover:text-choco-900'
             }`}
           >
-            <AlertTriangle className="w-3.5 h-3.5" />
-            <span>Low Stock Only</span>
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Low stock only
           </button>
         </div>
       </div>
 
-      {/* Storage Table */}
-      <div className="bg-white rounded-2xl border border-cream-200 shadow-soft overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-cream-100/60 text-choco-700 uppercase tracking-wider font-bold">
-              <tr>
-                <th className="px-6 py-3">Material Name</th>
-                <th className="px-6 py-3">Category</th>
-                <th className="px-6 py-3">Current Qty</th>
-                <th className="px-6 py-3">Cost / Unit</th>
-                <th className="px-6 py-3">Supplier</th>
-                <th className="px-6 py-3">Last Restocked</th>
-                {isAdmin && <th className="px-6 py-3 text-right">Actions</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-cream-200 text-choco-900">
-              {loading ? (
+      {/* Stock table */}
+      <div className="card overflow-hidden">
+        {!loading && inventory.length === 0 ? (
+          <EmptyState
+            icon={Boxes}
+            title={searchTerm || lowStockOnly || selectedCategory !== 'all' ? 'Nothing matches these filters' : 'No materials tracked yet'}
+            description={
+              searchTerm || lowStockOnly || selectedCategory !== 'all'
+                ? 'Clear a filter to see more.'
+                : 'Add the ingredients and packaging you buy so you know when to restock.'
+            }
+          />
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-choco-400">
-                    Loading inventory items...
-                  </td>
+                  <th>Material</th>
+                  <th>On hand</th>
+                  <th className="hidden md:table-cell">Cost / unit</th>
+                  <th className="hidden lg:table-cell">Supplier</th>
+                  <th className="hidden lg:table-cell">Last restock</th>
+                  {isAdmin && (
+                    <th className="text-right">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  )}
                 </tr>
-              ) : inventory.length > 0 ? (
-                inventory.map((item) => {
-                  const isLow = item.current_quantity <= item.minimum_stock;
-                  return (
-                    <tr key={item.id} className="hover:bg-cream-50/50 transition-colors">
-                      <td className="px-6 py-3.5">
-                        <span className="font-bold text-choco-900 block">{item.name}</span>
-                        {item.expiry_date && (
-                          <span className="text-[10px] text-choco-400">Exp: {item.expiry_date}</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-3.5 font-medium">{item.category}</td>
-                      <td className="px-6 py-3.5">
-                        <div className="flex items-center space-x-2">
-                          <span className={`font-extrabold ${isLow ? 'text-rose-600' : 'text-choco-900'}`}>
-                            {item.current_quantity} {item.unit}
-                          </span>
-                          {isLow && (
-                            <span className="px-2 py-0.5 text-[10px] font-bold bg-rose-100 text-rose-700 rounded-full border border-rose-200 animate-pulse">
-                              Low Stock (Min: {item.minimum_stock})
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-3.5 font-semibold text-choco-900">
-                        {currency}{item.cost_per_unit} / {item.unit}
-                      </td>
-                      <td className="px-6 py-3.5 text-choco-600">{item.supplier || '—'}</td>
-                      <td className="px-6 py-3.5 text-choco-500 text-[11px]">
-                        {item.last_restocked ? new Date(item.last_restocked).toLocaleDateString() : '—'}
-                      </td>
-
-                      {isAdmin && (
-                        <td className="px-6 py-3.5 text-right">
-                          <div className="flex items-center justify-end space-x-1">
-                            {/* Stock In Button */}
-                            <button
-                              onClick={() => openMovementModal(item, 'IN')}
-                              className="px-2.5 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center"
-                              title="Stock In (New arrival)"
-                            >
-                              <ArrowDownLeft className="w-3 h-3 mr-1 text-emerald-600" />
-                              Stock In
-                            </button>
-
-                            {/* Stock Out Button */}
-                            <button
-                              onClick={() => openMovementModal(item, 'OUT')}
-                              className="px-2.5 py-1 text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg flex items-center"
-                              title="Stock Out (Waste/Damage)"
-                            >
-                              <ArrowUpRight className="w-3 h-3 mr-1 text-rose-600" />
-                              Stock Out
-                            </button>
-
-                            {/* Edit */}
-                            <button
-                              onClick={() => handleOpenEditItem(item)}
-                              className="p-1.5 text-choco-600 hover:bg-cream-200 rounded-lg"
-                              title="Edit Details"
-                            >
-                              Edit
-                            </button>
-                          </div>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonRows cols={colCount} />
+                ) : (
+                  inventory.map((item) => {
+                    const isLow = item.current_quantity <= item.minimum_stock;
+                    const ratio = item.minimum_stock > 0 ? Math.min(item.current_quantity / (item.minimum_stock * 3), 1) : 1;
+                    return (
+                      <tr key={item.id}>
+                        <td>
+                          <p className="font-semibold text-choco-900">{item.name}</p>
+                          <p className="text-xs text-choco-400">
+                            {item.category}
+                            {item.expiry_date && ` · Expires ${item.expiry_date}`}
+                          </p>
                         </td>
-                      )}
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={7} className="text-center py-8 text-choco-400">
-                    No storage items found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                        <td className="min-w-[10rem]">
+                          <div className="flex items-baseline gap-2">
+                            <span className={`font-semibold tabular-nums ${isLow ? 'text-rose-700' : 'text-choco-900'}`}>
+                              {item.current_quantity} {item.unit}
+                            </span>
+                            {isLow && <span className="badge-danger">Low</span>}
+                          </div>
+                          <div className="mt-1.5 h-1 w-28 overflow-hidden rounded-full bg-cream-200">
+                            <div
+                              className={`h-full rounded-full ${isLow ? 'bg-rose-500' : ratio < 0.6 ? 'bg-amber-400' : 'bg-emerald-500'}`}
+                              style={{ width: `${Math.max(ratio * 100, 4)}%` }}
+                            />
+                          </div>
+                          <p className="mt-1 text-2xs text-choco-400">Min {item.minimum_stock} {item.unit}</p>
+                        </td>
+                        <td className="hidden tabular-nums md:table-cell">
+                          {currency}
+                          {item.cost_per_unit}
+                          <span className="text-choco-400"> / {item.unit}</span>
+                        </td>
+                        <td className="hidden text-choco-500 lg:table-cell">{item.supplier || '—'}</td>
+                        <td className="hidden whitespace-nowrap text-xs text-choco-400 lg:table-cell">
+                          {item.last_restocked ? new Date(item.last_restocked).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—'}
+                        </td>
+                        {isAdmin && (
+                          <td className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => openMovementModal(item, 'IN')}
+                                className="btn btn-sm border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                title="Record a delivery"
+                              >
+                                <ArrowDownLeft className="h-3.5 w-3.5" />
+                                <span className="hidden xl:inline">In</span>
+                              </button>
+                              <button
+                                onClick={() => openMovementModal(item, 'OUT')}
+                                className="btn btn-sm border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                                title="Record usage or waste"
+                              >
+                                <ArrowUpRight className="h-3.5 w-3.5" />
+                                <span className="hidden xl:inline">Out</span>
+                              </button>
+                              <button
+                                onClick={() => handleOpenEditItem(item)}
+                                className="icon-btn h-8 w-8"
+                                title="Edit details"
+                                aria-label={`Edit ${item.name}`}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* Stock Movement Log Table */}
-      <div className="bg-white rounded-2xl border border-cream-200 shadow-soft overflow-hidden">
-        <div className="px-6 py-4 border-b border-cream-200 flex items-center justify-between">
-          <h3 className="text-base font-bold text-choco-900 flex items-center">
-            <History className="w-4 h-4 mr-2 text-waffle-600" /> Recent Stock Movements
-          </h3>
+      {/* Movement log */}
+      <div className="card overflow-hidden">
+        <div className="card-header">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cream-200 text-choco-600">
+              <History className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="card-title">Recent stock movements</h2>
+              <p className="card-subtitle">Last 30 deliveries, usage and waste entries</p>
+            </div>
+          </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-cream-100/60 text-choco-700 uppercase tracking-wider font-bold">
-              <tr>
-                <th className="px-6 py-3">Type</th>
-                <th className="px-6 py-3">Item</th>
-                <th className="px-6 py-3">Qty</th>
-                <th className="px-6 py-3">Reason</th>
-                <th className="px-6 py-3">Cost</th>
-                <th className="px-6 py-3">Logged By</th>
-                <th className="px-6 py-3">Date/Time</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-cream-200 text-choco-900">
-              {movements.length > 0 ? (
-                movements.map((mov) => (
-                  <tr key={mov.id} className="hover:bg-cream-50/50 transition-colors">
-                    <td className="px-6 py-3">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
-                          mov.type === 'IN'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : 'bg-rose-50 text-rose-700 border-rose-200'
-                        }`}
-                      >
-                        {mov.type}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3 font-bold">{mov.item_name}</td>
-                    <td className="px-6 py-3 font-semibold">
-                      {mov.quantity} {mov.item_unit}
-                    </td>
-                    <td className="px-6 py-3 text-choco-600">{mov.reason}</td>
-                    <td className="px-6 py-3">{mov.cost ? `${currency}${mov.cost}` : '—'}</td>
-                    <td className="px-6 py-3 text-choco-600">{mov.created_by_name}</td>
-                    <td className="px-6 py-3 text-choco-400 text-[11px]">
-                      {new Date(mov.created_at).toLocaleString()}
-                    </td>
-                  </tr>
-                ))
-              ) : (
+        {movements.length === 0 && !loading ? (
+          <EmptyState compact icon={History} title="No movements yet" description="Deliveries and waste you record will be listed here." />
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <td colSpan={7} className="text-center py-6 text-choco-400">
-                    No stock movements recorded yet.
-                  </td>
+                  <th>Item</th>
+                  <th>Change</th>
+                  <th className="hidden md:table-cell">Reason</th>
+                  <th className="hidden md:table-cell text-right">Cost</th>
+                  <th className="hidden lg:table-cell">Logged by</th>
+                  <th className="text-right">When</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonRows cols={6} rows={4} />
+                ) : (
+                  movements.map((mov) => {
+                    const isIn = mov.type === 'IN';
+                    return (
+                      <tr key={mov.id}>
+                        <td className="font-medium text-choco-900">{mov.item_name}</td>
+                        <td>
+                          <span className={`inline-flex items-center gap-1 font-semibold tabular-nums ${isIn ? 'text-emerald-700' : 'text-rose-700'}`}>
+                            {isIn ? <ArrowDownLeft className="h-3.5 w-3.5" /> : <ArrowUpRight className="h-3.5 w-3.5" />}
+                            {isIn ? '+' : '−'}
+                            {mov.quantity} {mov.item_unit}
+                          </span>
+                        </td>
+                        <td className="hidden text-choco-500 md:table-cell">{mov.reason}</td>
+                        <td className="hidden text-right tabular-nums md:table-cell">{mov.cost ? `${currency}${mov.cost}` : '—'}</td>
+                        <td className="hidden text-choco-500 lg:table-cell">{mov.created_by_name}</td>
+                        <td className="whitespace-nowrap text-right text-xs text-choco-400">
+                          {new Date(mov.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* ITEM ADD/EDIT MODAL */}
+      {/* Add / edit material */}
       {itemModalOpen && (
         <Modal
           isOpen={itemModalOpen}
           onClose={() => setItemModalOpen(false)}
-          title={editingItem ? 'Edit Storage Material' : 'Add Storage Material'}
+          title={editingItem ? 'Edit material' : 'Add material'}
+          description={editingItem ? 'Use stock in / out to change quantities.' : 'Start tracking a new ingredient or supply.'}
           maxWidth="lg"
         >
           <form onSubmit={handleSaveItem} className="space-y-4">
-            {formError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium rounded-xl">
-                {formError}
-              </div>
-            )}
+            {formError && <Alert tone="error">{formError}</Alert>}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label className="block text-xs font-semibold text-choco-700 mb-1">Material Name *</label>
+                <label className="label" htmlFor="inv-name">Material name</label>
                 <input
+                  id="inv-name"
                   type="text"
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Belgian Waffle Premix"
-                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+                  placeholder="e.g. Belgian waffle premix"
+                  className="input"
                 />
               </div>
-
               <div>
-                <label className="block text-xs font-semibold text-choco-700 mb-1">Category *</label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
-                >
-                  <option value="Ingredients">Ingredients</option>
-                  <option value="Syrups">Syrups & Sauces</option>
-                  <option value="Toppings">Toppings & Sprinkles</option>
-                  <option value="Packaging">Packaging & Trays</option>
-                  <option value="Consumables">Consumables</option>
+                <label className="label" htmlFor="inv-category">Category</label>
+                <select id="inv-category" value={category} onChange={(e) => setCategory(e.target.value)} className="select">
+                  {CATEGORIES.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {!editingItem && (
                 <div>
-                  <label className="block text-xs font-semibold text-choco-700 mb-1">Initial Qty</label>
+                  <label className="label" htmlFor="inv-qty">Opening quantity</label>
                   <input
+                    id="inv-qty"
                     type="number"
                     min="0"
                     step="0.1"
                     value={quantity}
                     onChange={(e) => setQuantity(Number(e.target.value))}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+                    className="input tabular-nums"
                   />
                 </div>
               )}
-
               <div>
-                <label className="block text-xs font-semibold text-choco-700 mb-1">Unit</label>
+                <label className="label" htmlFor="inv-unit">Unit</label>
                 <input
+                  id="inv-unit"
                   type="text"
                   required
                   value={unit}
                   onChange={(e) => setUnit(e.target.value)}
                   placeholder="kg, bottles, cans"
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+                  className="input"
                 />
               </div>
-
               <div>
-                <label className="block text-xs font-semibold text-choco-700 mb-1">Min Stock Alert</label>
+                <label className="label" htmlFor="inv-min">Alert below</label>
                 <input
+                  id="inv-min"
                   type="number"
                   min="0"
                   step="0.1"
                   value={minStock}
                   onChange={(e) => setMinStock(Number(e.target.value))}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+                  className="input tabular-nums"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
-                <label className="block text-xs font-semibold text-choco-700 mb-1">Cost Per Unit ({currency})</label>
+                <label className="label" htmlFor="inv-cost">Cost per unit ({currency})</label>
                 <input
+                  id="inv-cost"
                   type="number"
                   min="0"
                   value={costPerUnit}
                   onChange={(e) => setCostPerUnit(Number(e.target.value))}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+                  className="input tabular-nums"
                 />
               </div>
-
               <div>
-                <label className="block text-xs font-semibold text-choco-700 mb-1">Supplier Name</label>
+                <label className="label" htmlFor="inv-supplier">Supplier</label>
                 <input
+                  id="inv-supplier"
                   type="text"
                   value={supplier}
                   onChange={(e) => setSupplier(e.target.value)}
                   placeholder="e.g. Metro Wholesale"
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+                  className="input"
                 />
               </div>
-
               <div>
-                <label className="block text-xs font-semibold text-choco-700 mb-1">Expiry Date</label>
+                <label className="label" htmlFor="inv-expiry">Expiry date</label>
                 <input
+                  id="inv-expiry"
                   type="date"
                   value={expiryDate}
                   onChange={(e) => setExpiryDate(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+                  className="input"
                 />
               </div>
             </div>
 
-            <div className="pt-3 flex justify-end space-x-2 border-t border-cream-200">
-              <button
-                type="button"
-                onClick={() => setItemModalOpen(false)}
-                className="px-4 py-2 text-xs font-semibold text-choco-600 bg-cream-200 rounded-xl"
-              >
+            <div className="-mx-6 -mb-5 mt-2 flex justify-end gap-2 border-t border-cream-200 bg-cream-50/60 px-6 py-4">
+              <button type="button" onClick={() => setItemModalOpen(false)} className="btn-secondary">
                 Cancel
               </button>
-              <button
-                type="submit"
-                disabled={formLoading}
-                className="px-5 py-2 text-xs font-bold text-white bg-waffle-500 hover:bg-waffle-600 rounded-xl shadow-waffle"
-              >
-                {formLoading ? 'Saving...' : 'Save Material'}
+              <button type="submit" disabled={formLoading} className="btn-primary">
+                {formLoading ? 'Saving…' : editingItem ? 'Save changes' : 'Add material'}
               </button>
             </div>
           </form>
         </Modal>
       )}
 
-      {/* MOVEMENT RECORD MODAL */}
+      {/* Record movement */}
       {movementModalOpen && selectedMovementItem && (
         <Modal
           isOpen={movementModalOpen}
           onClose={() => setMovementModalOpen(false)}
-          title={`Record Stock ${movementType === 'IN' ? 'In (Arrival)' : 'Out (Usage/Damage)'}: ${selectedMovementItem.name}`}
+          title={movementType === 'IN' ? 'Record delivery' : 'Record usage or waste'}
+          description={`${selectedMovementItem.name} · ${selectedMovementItem.current_quantity} ${selectedMovementItem.unit} on hand`}
           maxWidth="md"
         >
           <form onSubmit={handleRecordMovement} className="space-y-4">
-            {formError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium rounded-xl">
-                {formError}
-              </div>
-            )}
+            {formError && <Alert tone="error">{formError}</Alert>}
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-choco-700 mb-1">
-                  Quantity ({selectedMovementItem.unit}) *
-                </label>
+                <label className="label" htmlFor="mov-qty">Quantity ({selectedMovementItem.unit})</label>
                 <input
+                  id="mov-qty"
                   type="number"
                   min="0.1"
                   step="0.1"
                   required
                   value={movQty}
                   onChange={(e) => setMovQty(Number(e.target.value))}
-                  className="w-full px-3.5 py-2 text-sm font-bold rounded-xl border border-cream-300 focus:outline-hidden"
+                  className="input font-semibold tabular-nums"
                 />
               </div>
-
               <div>
-                <label className="block text-xs font-semibold text-choco-700 mb-1">Reason *</label>
+                <label className="label" htmlFor="mov-cost">Total cost ({currency})</label>
                 <input
-                  type="text"
-                  required
-                  value={movReason}
-                  onChange={(e) => setMovReason(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
-                  placeholder="e.g. New Batch Purchase"
+                  id="mov-cost"
+                  type="number"
+                  min="0"
+                  value={movCost}
+                  onChange={(e) => setMovCost(Number(e.target.value))}
+                  className="input tabular-nums"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-choco-700 mb-1">Total Cost ({currency})</label>
+              <label className="label" htmlFor="mov-reason">Reason</label>
               <input
-                type="number"
-                min="0"
-                value={movCost}
-                onChange={(e) => setMovCost(Number(e.target.value))}
-                className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+                id="mov-reason"
+                type="text"
+                required
+                value={movReason}
+                onChange={(e) => setMovReason(e.target.value)}
+                className="input"
+                placeholder="e.g. Weekly purchase"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-choco-700 mb-1">Notes</label>
+              <label className="label" htmlFor="mov-notes">Notes</label>
               <textarea
+                id="mov-notes"
                 rows={2}
                 value={movNotes}
                 onChange={(e) => setMovNotes(e.target.value)}
-                placeholder="Additional invoice info or damage notes..."
-                className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+                placeholder="Invoice number, damage details…"
+                className="input resize-none"
               />
             </div>
 
-            <div className="pt-3 flex justify-end space-x-2 border-t border-cream-200">
-              <button
-                type="button"
-                onClick={() => setMovementModalOpen(false)}
-                className="px-4 py-2 text-xs font-semibold text-choco-600 bg-cream-200 rounded-xl"
-              >
+            <div className="-mx-6 -mb-5 mt-2 flex justify-end gap-2 border-t border-cream-200 bg-cream-50/60 px-6 py-4">
+              <button type="button" onClick={() => setMovementModalOpen(false)} className="btn-secondary">
                 Cancel
               </button>
-              <button
-                type="submit"
-                disabled={formLoading}
-                className={`px-5 py-2 text-xs font-bold text-white rounded-xl shadow-xs ${
-                  movementType === 'IN' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
-                }`}
-              >
-                {formLoading ? 'Recording...' : `Record Stock ${movementType}`}
+              <button type="submit" disabled={formLoading} className={movementType === 'IN' ? 'btn-success' : 'btn-danger'}>
+                {formLoading ? 'Recording…' : movementType === 'IN' ? 'Add to stock' : 'Remove from stock'}
               </button>
             </div>
           </form>

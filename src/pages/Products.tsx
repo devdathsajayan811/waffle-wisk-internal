@@ -1,12 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Package, Plus, Edit2, Trash2, Power, Image as ImageIcon, AlertCircle } from 'lucide-react';
+import { Package, Plus, Edit2, Trash2, EyeOff, Upload, Image as ImageIcon } from 'lucide-react';
 import { api } from '../services/api';
-import { Product } from '../types';
+import { Category, Product } from '../types';
+import { Modal } from '../components/Modal';
+import { Alert, EmptyState, PageHeader, SearchInput, SkeletonCards } from '../components/ui';
+
+const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1562376552-0d160a2f238d?auto=format&fit=crop&w=400&q=80';
 
 export const Products: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
 
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -17,6 +24,8 @@ export const Products: React.FC = () => {
   const [price, setPrice] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [isAvailable, setIsAvailable] = useState(true);
+  const [categoryId, setCategoryId] = useState('');
+  const [categories, setCategories] = useState<Category[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -34,6 +43,7 @@ export const Products: React.FC = () => {
 
   useEffect(() => {
     fetchProducts();
+    api.getCategories().then(setCategories).catch(() => setCategories([]));
   }, []);
 
   const handleOpenAddModal = () => {
@@ -42,6 +52,8 @@ export const Products: React.FC = () => {
     setPrice('');
     setImageUrl('');
     setIsAvailable(true);
+    setCategoryId(categories[0] ? String(categories[0].id) : '');
+    setFormError(null);
     setModalOpen(true);
   };
 
@@ -51,6 +63,8 @@ export const Products: React.FC = () => {
     setPrice(prod.price.toString());
     setImageUrl(prod.image_url || '');
     setIsAvailable(prod.availability === 'AVAILABLE');
+    setCategoryId(String(prod.category_id));
+    setFormError(null);
     setModalOpen(true);
   };
 
@@ -63,7 +77,7 @@ export const Products: React.FC = () => {
       const res = await api.uploadProductImage(file);
       setImageUrl(res.imageUrl);
     } catch (err: any) {
-      alert('Failed to upload image: ' + err.message);
+      setFormError('Image upload failed: ' + err.message);
     } finally {
       setUploadingImage(false);
     }
@@ -80,7 +94,7 @@ export const Products: React.FC = () => {
         price: Number(price),
         image_url: imageUrl || 'https://images.unsplash.com/photo-1562376552-0d160a2f238d?auto=format&fit=crop&w=400&q=80',
         availability: isAvailable ? 'AVAILABLE' : 'UNAVAILABLE',
-        category_id: 1, // Default classic category
+        category_id: Number(categoryId),
       };
 
       if (editingProduct) {
@@ -92,7 +106,7 @@ export const Products: React.FC = () => {
       setModalOpen(false);
       fetchProducts();
     } catch (err: any) {
-      alert(err.message || 'Failed to save item');
+      setFormError(err.message || 'Failed to save item');
     } finally {
       setSubmitting(false);
     }
@@ -109,126 +123,160 @@ export const Products: React.FC = () => {
         )
       );
     } catch (err: any) {
-      alert('Failed to toggle status: ' + err.message);
+      setError('Could not change availability: ' + err.message);
     }
   };
 
   const handleDeleteProduct = async (id: number) => {
-    if (!window.confirm('Are you sure you want to delete this item?')) return;
+    if (!window.confirm('Remove this item from the menu? Past orders keep their history.')) return;
     try {
       await api.deleteProduct(id);
       setProducts((prev) => prev.filter((p) => p.id !== id));
     } catch (err: any) {
-      alert('Failed to delete item: ' + err.message);
+      setError('Could not delete the item: ' + err.message);
     }
   };
 
-  return (
-    <div className="space-y-6 max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-cream-300 pb-4">
-        <div>
-          <h1 className="text-2xl font-black text-choco-900 flex items-center">
-            <Package className="w-7 h-7 mr-2 text-waffle-500" />
-            Manage Items
-          </h1>
-          <p className="text-xs text-choco-600 font-medium">
-            Add, edit, delete, or enable/disable menu items available on the cart.
-          </p>
-        </div>
+  const enabledCount = products.filter((p) => p.availability === 'AVAILABLE').length;
+  const query = search.trim().toLowerCase();
+  const visibleProducts = products.filter((p) => {
+    const isActive = p.availability === 'AVAILABLE';
+    if (statusFilter === 'enabled' && !isActive) return false;
+    if (statusFilter === 'disabled' && isActive) return false;
+    return !query || p.name.toLowerCase().includes(query) || (p.category_name ?? '').toLowerCase().includes(query);
+  });
 
-        <button
-          onClick={handleOpenAddModal}
-          className="py-3 px-5 bg-waffle-500 hover:bg-waffle-600 text-white font-extrabold text-sm rounded-2xl shadow-waffle flex items-center justify-center space-x-2 transition-all shrink-0"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Add New Item</span>
-        </button>
+  const filters: Array<{ id: typeof statusFilter; label: string; count: number }> = [
+    { id: 'all', label: 'All', count: products.length },
+    { id: 'enabled', label: 'On menu', count: enabledCount },
+    { id: 'disabled', label: 'Hidden', count: products.length - enabledCount },
+  ];
+
+  return (
+    <div className="page">
+      <PageHeader
+        eyebrow="Catalog & stock"
+        title="Menu items"
+        description="Everything staff can sell from the cart. Hide an item to take it off the POS without deleting it."
+        actions={
+          <button onClick={handleOpenAddModal} className="btn-primary">
+            <Plus className="h-4 w-4" strokeWidth={2.5} />
+            Add item
+          </button>
+        }
+      />
+
+      <div className="toolbar">
+        <SearchInput value={search} onChange={setSearch} placeholder="Search items or categories" className="md:w-80" />
+        <div className="segmented">
+          {filters.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => setStatusFilter(f.id)}
+              className={`segmented-item ${statusFilter === f.id ? 'segmented-item-active' : ''}`}
+            >
+              {f.label}
+              <span className="rounded bg-cream-200/80 px-1.5 text-2xs tabular-nums text-choco-500">{f.count}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {error && (
-        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl text-xs font-semibold flex items-center space-x-2">
-          <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
+      {error && <Alert tone="error">{error}</Alert>}
 
-      {/* Items Cards Grid */}
       {loading ? (
-        <div className="py-20 text-center text-xs font-bold text-choco-500">
-          Loading items list...
-        </div>
+        <SkeletonCards count={8} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" itemClassName="h-72" />
       ) : products.length === 0 ? (
-        <div className="py-20 text-center text-xs font-bold text-choco-500">
-          No items found. Click "Add New Item" to create your first menu item.
+        <div className="card">
+          <EmptyState
+            icon={Package}
+            title="No menu items yet"
+            description="Add your first waffle so staff can start selling it."
+            action={
+              <button onClick={handleOpenAddModal} className="btn-primary">
+                <Plus className="h-4 w-4" strokeWidth={2.5} />
+                Add item
+              </button>
+            }
+          />
+        </div>
+      ) : visibleProducts.length === 0 ? (
+        <div className="card">
+          <EmptyState icon={Package} title="Nothing matches" description="Try a different search or filter." />
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-          {products.map((prod) => {
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {visibleProducts.map((prod) => {
             const isActive = prod.availability === 'AVAILABLE';
 
             return (
-              <div
-                key={prod.id}
-                className={`bg-white rounded-3xl p-4 border transition-all duration-200 flex flex-col justify-between shadow-soft ${
-                  isActive ? 'border-cream-300' : 'border-rose-200 bg-rose-50/20 opacity-80'
-                }`}
-              >
-                <div>
-                  {/* Image */}
-                  <div className="aspect-square w-full rounded-2xl overflow-hidden bg-cream-100 mb-3 relative border border-cream-200">
-                    <img
-                      src={prod.image_url || 'https://images.unsplash.com/photo-1562376552-0d160a2f238d?auto=format&fit=crop&w=400&q=80'}
-                      alt={prod.name}
-                      className="w-full h-full object-cover"
-                    />
-                    {!isActive && (
-                      <div className="absolute inset-0 bg-choco-900/60 backdrop-blur-xs flex items-center justify-center text-white font-extrabold text-xs">
-                        Disabled
-                      </div>
+              <div key={prod.id} className="card-interactive group flex flex-col overflow-hidden">
+                <div className="relative aspect-[4/3] overflow-hidden bg-cream-100">
+                  <img
+                    src={prod.image_url || FALLBACK_IMAGE}
+                    alt={prod.name}
+                    loading="lazy"
+                    className={`h-full w-full object-cover transition-all duration-500 ease-out-expo group-hover:scale-[1.04] ${
+                      isActive ? '' : 'grayscale-[60%]'
+                    }`}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-choco-900/30 via-transparent to-transparent" />
+                  <div className="absolute left-3 top-3">
+                    {isActive ? (
+                      <span className="badge border-white/40 bg-white/90 text-emerald-700 backdrop-blur">
+                        <span className="dot" /> On menu
+                      </span>
+                    ) : (
+                      <span className="badge border-white/20 bg-choco-900/70 text-cream-100 backdrop-blur">
+                        <EyeOff className="h-3 w-3" /> Hidden
+                      </span>
                     )}
-                  </div>
-
-                  {/* Name & Price */}
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-extrabold text-choco-900 text-base leading-snug">
-                      {prod.name}
-                    </h3>
-                    <span className="font-black text-emerald-600 text-lg shrink-0">
-                      ₹{prod.price}
-                    </span>
                   </div>
                 </div>
 
-                {/* Actions */}
-                <div className="mt-4 pt-3 border-t border-cream-200 flex items-center justify-between gap-2">
-                  <button
-                    onClick={() => handleToggleStatus(prod)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center space-x-1 border transition-colors ${
-                      isActive
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                        : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                    }`}
-                  >
-                    <Power className="w-3.5 h-3.5" />
-                    <span>{isActive ? 'Enabled' : 'Disabled'}</span>
-                  </button>
+                <div className="flex flex-1 flex-col gap-4 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="line-clamp-2 font-sans text-[0.9375rem] font-semibold leading-snug text-choco-900">{prod.name}</h3>
+                      {prod.category_name && <p className="mt-0.5 text-xs text-choco-400">{prod.category_name}</p>}
+                    </div>
+                    <span className="shrink-0 font-display text-lg font-semibold tabular-nums text-choco-900">₹{prod.price}</span>
+                  </div>
 
-                  <div className="flex items-center space-x-1">
+                  <div className="mt-auto flex items-center justify-between gap-2 border-t border-cream-200 pt-3">
                     <button
-                      onClick={() => handleOpenEditModal(prod)}
-                      className="p-2 text-choco-600 hover:text-choco-900 hover:bg-cream-100 rounded-xl"
-                      title="Edit Item"
+                      onClick={() => handleToggleStatus(prod)}
+                      role="switch"
+                      aria-checked={isActive}
+                      className="group/toggle flex items-center gap-2 text-xs font-medium text-choco-500 hover:text-choco-900"
                     >
-                      <Edit2 className="w-4 h-4" />
+                      <span
+                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ${
+                          isActive ? 'bg-emerald-500' : 'bg-cream-400'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 rounded-full bg-white shadow-xs transition-transform duration-200 ease-out-expo ${
+                            isActive ? 'translate-x-[1.125rem]' : 'translate-x-0.5'
+                          }`}
+                        />
+                      </span>
+                      {isActive ? 'Available' : 'Hidden'}
                     </button>
-                    <button
-                      onClick={() => handleDeleteProduct(prod.id)}
-                      className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl"
-                      title="Delete Item"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+
+                    <div className="flex items-center">
+                      <button onClick={() => handleOpenEditModal(prod)} className="icon-btn h-8 w-8" title="Edit item" aria-label={`Edit ${prod.name}`}>
+                        <Edit2 className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteProduct(prod.id)}
+                        className="icon-btn h-8 w-8 hover:bg-rose-50 hover:text-rose-600"
+                        title="Delete item"
+                        aria-label={`Delete ${prod.name}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -237,105 +285,117 @@ export const Products: React.FC = () => {
         </div>
       )}
 
-      {/* Add / Edit Item Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-choco-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-5 border border-cream-300">
-            <h2 className="text-xl font-black text-choco-900">
-              {editingProduct ? 'Edit Item' : 'Add New Item'}
-            </h2>
+      <Modal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editingProduct ? 'Edit item' : 'Add menu item'}
+        description={editingProduct ? 'Price changes apply to new carts only.' : 'New items appear on the POS straight away.'}
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {formError && <Alert tone="error">{formError}</Alert>}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-choco-800 uppercase tracking-wider mb-1">
-                  Item Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g., Chocolate Waffle"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-cream-300 focus:outline-hidden focus:ring-2 focus:ring-waffle-400"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-choco-800 uppercase tracking-wider mb-1">
-                  Price (₹) *
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  required
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  placeholder="e.g., 100"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-cream-300 focus:outline-hidden focus:ring-2 focus:ring-waffle-400"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-choco-800 uppercase tracking-wider mb-1">
-                  Item Image URL or File Upload
-                </label>
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    value={imageUrl}
-                    onChange={(e) => setImageUrl(e.target.value)}
-                    placeholder="https://images.unsplash.com/..."
-                    className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-cream-300 focus:outline-hidden focus:ring-2 focus:ring-waffle-400"
-                  />
-                  <div className="flex items-center space-x-2">
-                    <label className="cursor-pointer px-3 py-1.5 bg-cream-100 hover:bg-cream-200 text-choco-800 text-xs font-bold rounded-xl border border-cream-300 inline-flex items-center">
-                      <ImageIcon className="w-3.5 h-3.5 mr-1" />
-                      <span>{uploadingImage ? 'Uploading...' : 'Upload Image File'}</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageFileChange}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="isAvailableToggle"
-                  checked={isAvailable}
-                  onChange={(e) => setIsAvailable(e.target.checked)}
-                  className="w-4 h-4 rounded text-waffle-500 focus:ring-waffle-400"
-                />
-                <label htmlFor="isAvailableToggle" className="text-sm font-bold text-choco-800 cursor-pointer">
-                  Item is Available / Enabled
-                </label>
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-4 border-t border-cream-200">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="px-4 py-2.5 text-xs font-bold text-choco-700 bg-cream-100 hover:bg-cream-200 rounded-xl"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2.5 text-xs font-bold text-white bg-waffle-500 hover:bg-waffle-600 rounded-xl shadow-waffle disabled:opacity-60"
-                >
-                  {submitting ? 'Saving...' : editingProduct ? 'Update Item' : 'Create Item'}
-                </button>
-              </div>
-            </form>
+          <div>
+            <label className="label" htmlFor="product-name">Item name</label>
+            <input
+              id="product-name"
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Belgian chocolate waffle"
+              className="input"
+            />
           </div>
-        </div>
-      )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label" htmlFor="product-price">Price (₹)</label>
+              <input
+                id="product-price"
+                type="number"
+                step="any"
+                min="0"
+                required
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="149"
+                className="input tabular-nums"
+              />
+            </div>
+            <div>
+              <label className="label" htmlFor="product-category">Category</label>
+              <select
+                id="product-category"
+                required
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                className="select"
+              >
+                <option value="" disabled>
+                  Choose…
+                </option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="label" htmlFor="product-image">Image</label>
+            <div className="flex gap-3">
+              <div className="h-[4.5rem] w-[4.5rem] shrink-0 overflow-hidden rounded-xl border border-cream-300 bg-cream-100">
+                {imageUrl ? (
+                  <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-choco-300">
+                    <ImageIcon className="h-5 w-5" />
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1 space-y-2">
+                <input
+                  id="product-image"
+                  type="text"
+                  value={imageUrl}
+                  onChange={(e) => setImageUrl(e.target.value)}
+                  placeholder="Paste an image URL"
+                  className="input input-sm"
+                />
+                <label className="btn-secondary btn-sm cursor-pointer">
+                  <Upload className="h-3.5 w-3.5" />
+                  {uploadingImage ? 'Uploading…' : 'Upload file'}
+                  <input type="file" accept="image/*" onChange={handleImageFileChange} className="hidden" />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <label className="flex cursor-pointer items-center justify-between rounded-xl border border-cream-300 bg-cream-50 px-4 py-3">
+            <span>
+              <span className="block text-sm font-semibold text-choco-900">Show on POS</span>
+              <span className="block text-xs text-choco-400">Hidden items stay in reports but can't be sold.</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={isAvailable}
+              onChange={(e) => setIsAvailable(e.target.checked)}
+              className="checkbox h-5 w-5"
+            />
+          </label>
+
+          <div className="-mx-6 -mb-5 mt-2 flex justify-end gap-2 border-t border-cream-200 bg-cream-50/60 px-6 py-4">
+            <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary">
+              Cancel
+            </button>
+            <button type="submit" disabled={submitting || uploadingImage} className="btn-primary">
+              {submitting ? 'Saving…' : editingProduct ? 'Save changes' : 'Add item'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

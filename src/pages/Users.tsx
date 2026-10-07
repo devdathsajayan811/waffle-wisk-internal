@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, UserPlus, Key, Edit, ShieldCheck, User as UserIcon } from 'lucide-react';
+import { UserPlus, Key, Edit, ShieldCheck, UserCheck, Users as UsersIcon } from 'lucide-react';
 import { api } from '../services/api';
 import { User, UserRole } from '../types';
 import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
+import { Alert, EmptyState, PageHeader, SkeletonRows, StatCard } from '../components/ui';
 
 export const Users: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -54,6 +55,7 @@ export const Users: React.FC = () => {
     setRole('STAFF');
     setPassword('');
     setStatus('ACTIVE');
+    setFormError(null);
     setUserModalOpen(true);
   };
 
@@ -65,6 +67,7 @@ export const Users: React.FC = () => {
     setPhone(u.phone || '');
     setRole(u.role);
     setStatus(u.status);
+    setFormError(null);
     setUserModalOpen(true);
   };
 
@@ -117,286 +120,252 @@ export const Users: React.FC = () => {
     }
   };
 
+  const adminCount = users.filter((u) => u.role === 'ADMIN').length;
+  const activeCount = users.filter((u) => u.status === 'ACTIVE').length;
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-bold text-choco-900">User & Staff Management</h2>
-          <p className="text-xs text-choco-500">Create staff accounts, assign roles, reset passwords, and manage active status</p>
-        </div>
+    <div className="page">
+      <PageHeader
+        eyebrow="Administration"
+        title="Team"
+        description="Staff accounts, roles and access. Disable an account to block sign-in without losing its history."
+        actions={
+          <button onClick={handleOpenAdd} className="btn-primary">
+            <UserPlus className="h-4 w-4" />
+            Add team member
+          </button>
+        }
+      />
 
-        <button
-          onClick={handleOpenAdd}
-          className="px-4 py-2.5 bg-gradient-to-r from-waffle-500 to-waffle-600 hover:from-waffle-600 hover:to-waffle-700 text-white font-bold text-xs rounded-xl shadow-waffle flex items-center space-x-2 shrink-0"
-        >
-          <UserPlus className="w-4 h-4" />
-          <span>Add New User / Staff</span>
-        </button>
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard label="Team members" value={users.length} icon={UsersIcon} tone="choco" loading={loading} />
+        <StatCard label="Admins" value={adminCount} icon={ShieldCheck} tone="waffle" loading={loading} />
+        <StatCard label="Active accounts" value={activeCount} icon={UserCheck} tone="emerald" loading={loading} hint={users.length - activeCount > 0 ? `${users.length - activeCount} disabled` : 'Everyone can sign in'} />
+      </section>
+
+      <div className="card overflow-hidden">
+        {!loading && users.length === 0 ? (
+          <EmptyState icon={UsersIcon} title="No team members yet" description="Add staff so they can sign in and take orders." />
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th className="hidden md:table-cell">Contact</th>
+                  <th>Role</th>
+                  <th className="hidden sm:table-cell">Status</th>
+                  <th className="hidden lg:table-cell">Last sign-in</th>
+                  <th className="text-right">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonRows cols={6} rows={4} />
+                ) : (
+                  users.map((u) => (
+                    <tr key={u.id} className={u.status === 'DISABLED' ? 'opacity-60' : ''}>
+                      <td>
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-waffle-100 to-waffle-200 font-display text-sm font-semibold text-waffle-800 ring-1 ring-inset ring-waffle-300/50">
+                            {u.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold text-choco-900">{u.name}</p>
+                            <p className="truncate text-xs text-choco-400">@{u.username}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="hidden md:table-cell">
+                        <p className="text-choco-700">{u.email}</p>
+                        <p className="text-xs text-choco-400">{u.phone || '—'}</p>
+                      </td>
+                      <td>
+                        <StatusBadge status={u.role} type="role" />
+                      </td>
+                      <td className="hidden sm:table-cell">
+                        <span className={u.status === 'ACTIVE' ? 'badge-success' : 'badge-danger'}>
+                          <span className="dot" />
+                          {u.status === 'ACTIVE' ? 'Active' : 'Disabled'}
+                        </span>
+                      </td>
+                      <td className="hidden whitespace-nowrap text-xs text-choco-400 lg:table-cell">
+                        {u.last_login
+                          ? new Date(u.last_login).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+                          : 'Never'}
+                      </td>
+                      <td className="text-right">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <button onClick={() => handleOpenEdit(u)} className="icon-btn h-8 w-8" title="Edit member" aria-label={`Edit ${u.name}`}>
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setTargetUser(u);
+                              setNewPassword('');
+                              setFormError(null);
+                              setResetModalOpen(true);
+                            }}
+                            className="icon-btn h-8 w-8 hover:bg-waffle-50 hover:text-waffle-700"
+                            title="Reset password"
+                            aria-label={`Reset password for ${u.name}`}
+                          >
+                            <Key className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* Users Table */}
-      <div className="bg-white rounded-2xl border border-cream-200 shadow-soft overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-cream-100/60 text-choco-700 uppercase tracking-wider font-bold">
-              <tr>
-                <th className="px-6 py-3">User</th>
-                <th className="px-6 py-3">Contact</th>
-                <th className="px-6 py-3">Role</th>
-                <th className="px-6 py-3">Status</th>
-                <th className="px-6 py-3">Last Login</th>
-                <th className="px-6 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-cream-200 text-choco-900">
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="text-center py-8 text-choco-400">
-                    Loading user accounts...
-                  </td>
-                </tr>
-              ) : users.length > 0 ? (
-                users.map((u) => (
-                  <tr key={u.id} className="hover:bg-cream-50/50 transition-colors">
-                    <td className="px-6 py-3.5">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 rounded-full bg-waffle-100 text-waffle-800 font-extrabold flex items-center justify-center text-xs">
-                          {u.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <span className="font-bold text-choco-900 block">{u.name}</span>
-                          <span className="text-[10px] text-choco-400 font-mono">@{u.username}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-3.5">
-                      <span className="block font-medium">{u.email}</span>
-                      <span className="block text-[10px] text-choco-500">{u.phone || '—'}</span>
-                    </td>
-                    <td className="px-6 py-3.5">
-                      <StatusBadge status={u.role} type="role" />
-                    </td>
-                    <td className="px-6 py-3.5">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                          u.status === 'ACTIVE'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : 'bg-rose-50 text-rose-700 border-rose-200'
-                        }`}
-                      >
-                        {u.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3.5 text-choco-500 text-[11px]">
-                      {u.last_login ? new Date(u.last_login).toLocaleString() : 'Never'}
-                    </td>
-                    <td className="px-6 py-3.5 text-right">
-                      <div className="flex items-center justify-end space-x-1">
-                        <button
-                          onClick={() => handleOpenEdit(u)}
-                          className="p-1.5 text-choco-600 hover:bg-cream-200 rounded-lg"
-                          title="Edit User Info"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            setTargetUser(u);
-                            setNewPassword('');
-                            setResetModalOpen(true);
-                          }}
-                          className="p-1.5 text-waffle-600 hover:bg-waffle-50 rounded-lg"
-                          title="Reset User Password"
-                        >
-                          <Key className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={6} className="text-center py-8 text-choco-400">
-                    No users found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* USER ADD/EDIT MODAL */}
       {userModalOpen && (
         <Modal
           isOpen={userModalOpen}
           onClose={() => setUserModalOpen(false)}
-          title={editingUser ? `Edit User: ${editingUser.name}` : 'Add New Staff / Admin'}
-          maxWidth="md"
+          title={editingUser ? `Edit ${editingUser.name}` : 'Add team member'}
+          description={editingUser ? 'Email and username cannot be changed.' : 'They can sign in with their username or email.'}
+          maxWidth="lg"
         >
           <form onSubmit={handleSaveUser} className="space-y-4">
-            {formError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium rounded-xl">
-                {formError}
-              </div>
-            )}
+            {formError && <Alert tone="error">{formError}</Alert>}
 
             <div>
-              <label className="block text-xs font-semibold text-choco-700 mb-1">Full Name *</label>
+              <label className="label" htmlFor="user-name">Full name</label>
               <input
+                id="user-name"
                 type="text"
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Rahul Verma"
-                className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+                placeholder="e.g. Ananya Iyer"
+                className="input"
               />
             </div>
 
             {!editingUser && (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="block text-xs font-semibold text-choco-700 mb-1">Email Address *</label>
+                    <label className="label" htmlFor="user-email">Email</label>
                     <input
+                      id="user-email"
                       type="email"
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="rahul@wafflewisk.com"
-                      className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+                      placeholder="ananya@wafflewisk.com"
+                      className="input"
                     />
                   </div>
-
                   <div>
-                    <label className="block text-xs font-semibold text-choco-700 mb-1">Username *</label>
+                    <label className="label" htmlFor="user-username">Username</label>
                     <input
+                      id="user-username"
                       type="text"
                       required
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
-                      placeholder="rahul"
-                      className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+                      placeholder="ananya"
+                      className="input"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-choco-700 mb-1">Password *</label>
+                  <label className="label" htmlFor="user-password">Temporary password</label>
                   <input
+                    id="user-password"
                     type="password"
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Min 8 chars, 1 uppercase, 1 number"
-                    className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+                    className="input"
                   />
+                  <p className="field-hint">At least 8 characters, with one uppercase letter and one number.</p>
                 </div>
               </>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label className="block text-xs font-semibold text-choco-700 mb-1">Phone Number</label>
+                <label className="label" htmlFor="user-phone">Phone</label>
                 <input
-                  type="text"
+                  id="user-phone"
+                  type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+91 98765 43210"
-                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+                  placeholder="+91 98204 31756"
+                  className="input"
                 />
               </div>
-
               <div>
-                <label className="block text-xs font-semibold text-choco-700 mb-1">Role *</label>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as UserRole)}
-                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
-                >
-                  <option value="STAFF">STAFF (POS & Orders)</option>
-                  <option value="ADMIN">ADMIN (Full Control)</option>
+                <label className="label" htmlFor="user-role">Role</label>
+                <select id="user-role" value={role} onChange={(e) => setRole(e.target.value as UserRole)} className="select">
+                  <option value="STAFF">Staff · POS and orders</option>
+                  <option value="ADMIN">Admin · full access</option>
                 </select>
               </div>
             </div>
 
             {editingUser && (
               <div>
-                <label className="block text-xs font-semibold text-choco-700 mb-1">Account Status</label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as any)}
-                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
-                >
-                  <option value="ACTIVE">ACTIVE</option>
-                  <option value="DISABLED">DISABLED</option>
+                <label className="label" htmlFor="user-status">Account status</label>
+                <select id="user-status" value={status} onChange={(e) => setStatus(e.target.value as any)} className="select">
+                  <option value="ACTIVE">Active</option>
+                  <option value="DISABLED">Disabled</option>
                 </select>
               </div>
             )}
 
-            <div className="pt-3 flex justify-end space-x-2 border-t border-cream-200">
-              <button
-                type="button"
-                onClick={() => setUserModalOpen(false)}
-                className="px-4 py-2 text-xs font-semibold text-choco-600 bg-cream-200 rounded-xl"
-              >
+            <div className="-mx-6 -mb-5 mt-2 flex justify-end gap-2 border-t border-cream-200 bg-cream-50/60 px-6 py-4">
+              <button type="button" onClick={() => setUserModalOpen(false)} className="btn-secondary">
                 Cancel
               </button>
-              <button
-                type="submit"
-                disabled={formLoading}
-                className="px-5 py-2 text-xs font-bold text-white bg-waffle-500 hover:bg-waffle-600 rounded-xl shadow-waffle"
-              >
-                {formLoading ? 'Saving...' : editingUser ? 'Update User' : 'Create User Account'}
+              <button type="submit" disabled={formLoading} className="btn-primary">
+                {formLoading ? 'Saving…' : editingUser ? 'Save changes' : 'Create account'}
               </button>
             </div>
           </form>
         </Modal>
       )}
 
-      {/* RESET PASSWORD MODAL */}
       {resetModalOpen && targetUser && (
         <Modal
           isOpen={resetModalOpen}
           onClose={() => setResetModalOpen(false)}
-          title={`Reset Password for ${targetUser.name}`}
+          title="Reset password"
+          description={`Set a new password for ${targetUser.name}.`}
           maxWidth="sm"
         >
           <form onSubmit={handleResetPassword} className="space-y-4">
-            {formError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium rounded-xl">
-                {formError}
-              </div>
-            )}
+            {formError && <Alert tone="error">{formError}</Alert>}
 
             <div>
-              <label className="block text-xs font-semibold text-choco-700 mb-1">New Password *</label>
+              <label className="label" htmlFor="reset-password">New password</label>
               <input
+                id="reset-password"
                 type="password"
                 required
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Min 8 chars, 1 uppercase, 1 number"
-                className="w-full px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden"
+                className="input"
               />
+              <p className="field-hint">At least 8 characters, with one uppercase letter and one number.</p>
             </div>
 
-            <div className="pt-3 flex justify-end space-x-2 border-t border-cream-200">
-              <button
-                type="button"
-                onClick={() => setResetModalOpen(false)}
-                className="px-4 py-2 text-xs font-semibold text-choco-600 bg-cream-200 rounded-xl"
-              >
+            <div className="-mx-6 -mb-5 mt-2 flex justify-end gap-2 border-t border-cream-200 bg-cream-50/60 px-6 py-4">
+              <button type="button" onClick={() => setResetModalOpen(false)} className="btn-secondary">
                 Cancel
               </button>
-              <button
-                type="submit"
-                disabled={formLoading}
-                className="px-5 py-2 text-xs font-bold text-white bg-waffle-500 hover:bg-waffle-600 rounded-xl shadow-waffle"
-              >
-                {formLoading ? 'Updating...' : 'Reset Password'}
+              <button type="submit" disabled={formLoading} className="btn-primary">
+                {formLoading ? 'Updating…' : 'Reset password'}
               </button>
             </div>
           </form>

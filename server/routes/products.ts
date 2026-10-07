@@ -1,304 +1,246 @@
-import { Router, Response } from 'express';
+import { Router } from 'express';
 import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
-import { dbQuery } from '../db.js';
-import { AuthenticatedRequest, authenticateToken, requireRole } from '../middleware/auth.js';
+import { z } from 'zod';
+import { db, SqlParam } from '../db/index.js';
+import { audit } from '../lib/audit.js';
+import { badRequest, clearableNumber, idParam, notFound, optionalNumber, optionalString, parse } from '../lib/http.js';
+import { AuthenticatedRequest, authenticateToken, currentUser, requireRole } from '../middleware/auth.js';
+import { allowedImageTypes, storeImage } from '../services/storage.js';
 
 const router = Router();
 
-// Configure Multer for product image uploads
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    const uploadPath = path.resolve(process.cwd(), 'uploads');
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath, { recursive: true });
-    }
-    cb(null, uploadPath);
-  },
-  filename: (_req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname) || '.jpg';
-    cb(null, 'product-' + uniqueSuffix + ext);
-  },
-});
-
 const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed'));
-    }
+    if (allowedImageTypes.includes(file.mimetype)) cb(null, true);
+    else cb(badRequest('Only JPEG, PNG, WebP or GIF images are allowed'));
   },
 });
 
-// Image Upload Endpoint
-router.post('/upload-image', authenticateToken, requireRole('ADMIN'), upload.single('image'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'No image file uploaded' });
-  }
-  const imageUrl = `/uploads/${req.file.filename}`;
+const PRODUCT_SELECT = `SELECT p.*, c.name AS category_name, c.slug AS category_slug
+  FROM products p JOIN categories c ON p.category_id = c.id`;
+
+interface ProductRow {
+  id: number;
+  name: string;
+  price: number;
+  is_archived: number;
+  availability: string;
+}
+
+router.post('/upload-image', authenticateToken, requireRole('ADMIN'), upload.single('image'), async (req, res) => {
+  if (!req.file) throw badRequest('No image file uploaded');
+  const imageUrl = await storeImage(req.file.buffer, req.file.mimetype);
   return res.json({ imageUrl });
 });
 
-// Get Categories
-router.get('/categories', authenticateToken, (_req, res) => {
-  const categories = dbQuery.all('SELECT * FROM categories ORDER BY display_order ASC');
-  return res.json(categories);
+router.get('/categories', authenticateToken, async (_req, res) => {
+  return res.json(await db.all('SELECT * FROM categories ORDER BY display_order ASC'));
 });
 
-// Get All Products
-router.get('/', authenticateToken, (req, res) => {
-  const { category, search, availability } = req.query;
+const listQuerySchema = z.object({
+  category: z.string().max(100).optional(),
+  availability: z.union([z.enum(['AVAILABLE', 'UNAVAILABLE', 'OUT_OF_STOCK']), z.literal('all')]).optional(),
+  search: z.string().trim().max(100).optional(),
+  include_archived: z.enum(['true', 'false']).optional(),
+});
 
-  let sql = `
-    SELECT p.*, c.name as category_name, c.slug as category_slug
-    FROM products p
-    JOIN categories c ON p.category_id = c.id
-    WHERE 1=1
-  `;
-  const params: any[] = [];
+router.get('/', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  const actor = currentUser(req);
+  const query = parse(listQuerySchema, req.query);
 
-  if (category && category !== 'all') {
-    sql += ` AND (c.slug = ? OR c.id = ?)`;
-    params.push(category, category);
+  let sql = `${PRODUCT_SELECT} WHERE 1=1`;
+  const params: SqlParam[] = [];
+
+  if (!(actor.role === 'ADMIN' && query.include_archived === 'true')) {
+    sql += ' AND p.is_archived = 0';
   }
-
-  if (availability && availability !== 'all') {
-    sql += ` AND p.availability = ?`;
-    params.push(availability);
+  if (query.category && query.category !== 'all') {
+    sql += ' AND (c.slug = ? OR c.id = ?)';
+    params.push(query.category, Number(query.category) || -1);
   }
-
-  if (search && typeof search === 'string' && search.trim() !== '') {
-    sql += ` AND (p.name LIKE ? OR p.sku LIKE ? OR p.description LIKE ?)`;
-    const term = `%${search.trim()}%`;
+  if (query.availability && query.availability !== 'all') {
+    sql += ' AND p.availability = ?';
+    params.push(query.availability);
+  }
+  if (query.search) {
+    sql += ' AND (p.name LIKE ? OR p.sku LIKE ? OR p.description LIKE ?)';
+    const term = `%${query.search}%`;
     params.push(term, term, term);
   }
+  sql += ' ORDER BY p.id DESC';
 
-  sql += ` ORDER BY p.id DESC`;
-
-  const products = dbQuery.all(sql, params);
-  return res.json(products);
+  return res.json(await db.all(sql, params));
 });
 
-// Get Single Product & Price History
-router.get('/:id', authenticateToken, (req, res) => {
-  const product = dbQuery.get(
-    `SELECT p.*, c.name as category_name FROM products p JOIN categories c ON p.category_id = c.id WHERE p.id = ?`,
-    [req.params.id]
-  );
-  if (!product) return res.status(404).json({ error: 'Product not found' });
-
-  const priceHistory = dbQuery.all(
-    `SELECT * FROM price_history WHERE product_id = ? ORDER BY created_at DESC`,
-    [req.params.id]
-  );
-
+router.get('/:id', authenticateToken, async (req, res) => {
+  const { id } = parse(idParam, req.params);
+  const product = await db.get(`${PRODUCT_SELECT} WHERE p.id = ?`, [id]);
+  if (!product) throw notFound('Product not found');
+  const priceHistory = await db.all('SELECT * FROM price_history WHERE product_id = ? ORDER BY created_at DESC, id DESC', [id]);
   return res.json({ product, priceHistory });
 });
 
-// Add Product (Admin Only)
-router.post('/', authenticateToken, requireRole('ADMIN'), (req: AuthenticatedRequest, res: Response) => {
-  const {
-    sku,
-    name,
-    category_id,
-    description,
-    image_url,
-    price,
-    discount_price,
-    tax_percent,
-    stock_quantity,
-    low_stock_threshold,
-    unit,
-    availability,
-  } = req.body;
+const productFields = {
+  sku: optionalString(50),
+  name: z.string().trim().min(1, 'Name is required').max(150),
+  category_id: z.coerce.number().int().positive(),
+  description: optionalString(1000),
+  image_url: optionalString(2000),
+  price: z.coerce.number().min(0, 'Price must be a non-negative number'),
+  discount_price: clearableNumber(z.number().min(0)),
+  tax_percent: optionalNumber(z.number().min(0).max(100)),
+  stock_quantity: optionalNumber(z.number().int().min(0)),
+  low_stock_threshold: optionalNumber(z.number().int().min(0)),
+  unit: optionalString(30),
+  availability: z.enum(['AVAILABLE', 'UNAVAILABLE', 'OUT_OF_STOCK']).optional(),
+};
 
-  if (!name || !category_id || price === undefined || price === null) {
-    return res.status(400).json({ error: 'Name, Category, and Price are required' });
-  }
+const discountBelowPrice = (data: { price?: number; discount_price?: number | null }) =>
+  data.discount_price == null || data.price === undefined || data.discount_price <= data.price;
+const discountMessage = { message: 'Discount price cannot be higher than the price', path: ['discount_price'] };
 
-  if (Number(price) < 0) {
-    return res.status(400).json({ error: 'Price must be a non-negative number' });
-  }
+const createSchema = z.object(productFields).refine(discountBelowPrice, discountMessage);
+const updateSchema = z.object(productFields).partial().refine(discountBelowPrice, discountMessage);
 
-  const generatedSku = sku || `WFL-${Math.floor(1000 + Math.random() * 9000)}`;
+router.post('/', authenticateToken, requireRole('ADMIN'), async (req: AuthenticatedRequest, res) => {
+  const actor = currentUser(req);
+  const data = parse(createSchema, req.body);
 
-  const result = dbQuery.run(
-    `INSERT INTO products (sku, name, category_id, description, image_url, price, discount_price, tax_percent, stock_quantity, low_stock_threshold, unit, availability)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      generatedSku,
-      name.trim(),
-      Number(category_id),
-      description || '',
-      image_url || '',
-      Number(price),
-      discount_price ? Number(discount_price) : null,
-      tax_percent !== undefined ? Number(tax_percent) : 5.0,
-      stock_quantity !== undefined ? Number(stock_quantity) : 0,
-      low_stock_threshold !== undefined ? Number(low_stock_threshold) : 5,
-      unit || 'pcs',
-      availability || 'AVAILABLE',
-    ]
-  );
-
-  const newProduct = dbQuery.get(`SELECT p.*, c.name as category_name FROM products p JOIN categories c ON p.category_id = c.id WHERE p.id = ?`, [result.lastInsertRowid]);
-
-  dbQuery.run(
-    `INSERT INTO audit_logs (action, user_id, user_name, user_role, description) VALUES (?, ?, ?, ?, ?)`,
-    ['CREATE_PRODUCT', req.user!.id, req.user!.name, req.user!.role, `Created new product: ${name} (Price: ₹${price})`]
-  );
-
-  return res.status(201).json(newProduct);
-});
-
-// Edit Product Details (Admin Only)
-router.put('/:id', authenticateToken, requireRole('ADMIN'), (req: AuthenticatedRequest, res: Response) => {
-  const productId = Number(req.params.id);
-  const existing = dbQuery.get('SELECT * FROM products WHERE id = ?', [productId]);
-  if (!existing) return res.status(404).json({ error: 'Product not found' });
-
-  const {
-    sku,
-    name,
-    category_id,
-    description,
-    image_url,
-    price,
-    discount_price,
-    tax_percent,
-    stock_quantity,
-    low_stock_threshold,
-    unit,
-    availability,
-  } = req.body;
-
-  const newPrice = Number(price);
-  const oldPrice = Number(existing.price);
-
-  // If price changed, maintain mandatory price history record
-  if (newPrice !== oldPrice) {
-    dbQuery.run(
-      `INSERT INTO price_history (product_id, old_price, new_price, updated_by, updated_by_name) VALUES (?, ?, ?, ?, ?)`,
-      [productId, oldPrice, newPrice, req.user!.id, req.user!.name]
+  const created = await db.transaction(async (tx) => {
+    const { lastInsertRowid } = await tx.run(
+      `INSERT INTO products (sku, name, category_id, description, image_url, price, discount_price, tax_percent, stock_quantity, low_stock_threshold, unit, availability)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        data.sku || `WFL-${Date.now().toString(36).toUpperCase()}`,
+        data.name,
+        data.category_id,
+        data.description ?? '',
+        data.image_url ?? '',
+        data.price,
+        data.discount_price ?? null,
+        data.tax_percent ?? 5,
+        data.stock_quantity ?? 0,
+        data.low_stock_threshold ?? 5,
+        data.unit || 'pcs',
+        data.availability ?? 'AVAILABLE',
+      ]
     );
+    await audit(tx, actor, 'CREATE_PRODUCT', `Created new product: ${data.name} (Price: ₹${data.price})`, req.ip);
+    return tx.get(`${PRODUCT_SELECT} WHERE p.id = ?`, [lastInsertRowid]);
+  });
 
-    dbQuery.run(
-      `INSERT INTO audit_logs (action, user_id, user_name, user_role, description) VALUES (?, ?, ?, ?, ?)`,
-      ['PRICE_CHANGE', req.user!.id, req.user!.name, req.user!.role, `Price for '${existing.name}' updated from ₹${oldPrice} to ₹${newPrice}`]
+  return res.status(201).json(created);
+});
+
+router.put('/:id', authenticateToken, requireRole('ADMIN'), async (req: AuthenticatedRequest, res) => {
+  const actor = currentUser(req);
+  const { id } = parse(idParam, req.params);
+  const data = parse(updateSchema, req.body);
+
+  const updated = await db.transaction(async (tx) => {
+    const existing = await tx.get<ProductRow & Record<string, any>>('SELECT * FROM products WHERE id = ?', [id]);
+    if (!existing) throw notFound('Product not found');
+
+    const newPrice = data.price ?? Number(existing.price);
+    const newDiscount = data.discount_price !== undefined ? data.discount_price : existing.discount_price;
+    if (newDiscount != null && newDiscount > newPrice) throw badRequest('Discount price cannot be higher than the price');
+
+    if (data.price !== undefined && data.price !== Number(existing.price)) {
+      await tx.run(
+        'INSERT INTO price_history (product_id, old_price, new_price, updated_by, updated_by_name) VALUES (?, ?, ?, ?, ?)',
+        [id, existing.price, data.price, actor.id, actor.name]
+      );
+      await audit(tx, actor, 'PRICE_CHANGE', `Price for '${existing.name}' updated from ₹${existing.price} to ₹${data.price}`, req.ip);
+    }
+
+    await tx.run(
+      `UPDATE products SET sku = ?, name = ?, category_id = ?, description = ?, image_url = ?, price = ?, discount_price = ?,
+         tax_percent = ?, stock_quantity = ?, low_stock_threshold = ?, unit = ?, availability = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [
+        data.sku || existing.sku,
+        data.name ?? existing.name,
+        data.category_id ?? existing.category_id,
+        data.description ?? existing.description,
+        data.image_url ?? existing.image_url,
+        newPrice,
+        newDiscount,
+        data.tax_percent ?? existing.tax_percent,
+        data.stock_quantity ?? existing.stock_quantity,
+        data.low_stock_threshold ?? existing.low_stock_threshold,
+        data.unit || existing.unit,
+        data.availability ?? existing.availability,
+        id,
+      ]
     );
-  }
+    await audit(tx, actor, 'UPDATE_PRODUCT', `Updated product: ${data.name ?? existing.name}`, req.ip);
+    return tx.get(`${PRODUCT_SELECT} WHERE p.id = ?`, [id]);
+  });
 
-  dbQuery.run(
-    `UPDATE products SET
-      sku = ?,
-      name = ?,
-      category_id = ?,
-      description = ?,
-      image_url = ?,
-      price = ?,
-      discount_price = ?,
-      tax_percent = ?,
-      stock_quantity = ?,
-      low_stock_threshold = ?,
-      unit = ?,
-      availability = ?,
-      updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?`,
-    [
-      sku || existing.sku,
-      name ? name.trim() : existing.name,
-      category_id ? Number(category_id) : existing.category_id,
-      description !== undefined ? description : existing.description,
-      image_url !== undefined ? image_url : existing.image_url,
-      newPrice,
-      discount_price !== undefined ? (discount_price ? Number(discount_price) : null) : existing.discount_price,
-      tax_percent !== undefined ? Number(tax_percent) : existing.tax_percent,
-      stock_quantity !== undefined ? Number(stock_quantity) : existing.stock_quantity,
-      low_stock_threshold !== undefined ? Number(low_stock_threshold) : existing.low_stock_threshold,
-      unit || existing.unit,
-      availability || existing.availability,
-      productId,
-    ]
-  );
-
-  const updatedProduct = dbQuery.get(`SELECT p.*, c.name as category_name FROM products p JOIN categories c ON p.category_id = c.id WHERE p.id = ?`, [productId]);
-
-  dbQuery.run(
-    `INSERT INTO audit_logs (action, user_id, user_name, user_role, description) VALUES (?, ?, ?, ?, ?)`,
-    ['UPDATE_PRODUCT', req.user!.id, req.user!.name, req.user!.role, `Updated product: ${name || existing.name}`]
-  );
-
-  return res.json(updatedProduct);
+  return res.json(updated);
 });
 
-// Specific Price Management Endpoint (Admin Only)
-router.patch('/:id/price', authenticateToken, requireRole('ADMIN'), (req: AuthenticatedRequest, res: Response) => {
-  const productId = Number(req.params.id);
-  const { price, discount_price } = req.body;
+const priceSchema = z
+  .object({ price: z.coerce.number().min(0, 'Valid price is required'), discount_price: clearableNumber(z.number().min(0)) })
+  .refine(discountBelowPrice, discountMessage);
 
-  if (price === undefined || price === null || Number(price) < 0) {
-    return res.status(400).json({ error: 'Valid price is required' });
-  }
+router.patch('/:id/price', authenticateToken, requireRole('ADMIN'), async (req: AuthenticatedRequest, res) => {
+  const actor = currentUser(req);
+  const { id } = parse(idParam, req.params);
+  const { price, discount_price } = parse(priceSchema, req.body);
 
-  const existing = dbQuery.get('SELECT * FROM products WHERE id = ?', [productId]);
-  if (!existing) return res.status(404).json({ error: 'Product not found' });
+  const history = await db.transaction(async (tx) => {
+    const existing = await tx.get<ProductRow>('SELECT * FROM products WHERE id = ?', [id]);
+    if (!existing) throw notFound('Product not found');
 
-  const oldPrice = Number(existing.price);
-  const newPrice = Number(price);
+    await tx.run(
+      'INSERT INTO price_history (product_id, old_price, new_price, updated_by, updated_by_name) VALUES (?, ?, ?, ?, ?)',
+      [id, existing.price, price, actor.id, actor.name]
+    );
+    await tx.run('UPDATE products SET price = ?, discount_price = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [
+      price,
+      discount_price ?? null,
+      id,
+    ]);
+    await audit(tx, actor, 'PRICE_CHANGE', `Explicit price update for '${existing.name}' from ₹${existing.price} to ₹${price}`, req.ip);
+    return tx.all('SELECT * FROM price_history WHERE product_id = ? ORDER BY created_at DESC, id DESC', [id]);
+  });
 
-  dbQuery.run(
-    `INSERT INTO price_history (product_id, old_price, new_price, updated_by, updated_by_name) VALUES (?, ?, ?, ?, ?)`,
-    [productId, oldPrice, newPrice, req.user!.id, req.user!.name]
-  );
-
-  dbQuery.run(
-    `UPDATE products SET price = ?, discount_price = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-    [newPrice, discount_price ? Number(discount_price) : null, productId]
-  );
-
-  dbQuery.run(
-    `INSERT INTO audit_logs (action, user_id, user_name, user_role, description) VALUES (?, ?, ?, ?, ?)`,
-    ['PRICE_CHANGE', req.user!.id, req.user!.name, req.user!.role, `Explicit price update for '${existing.name}' from ₹${oldPrice} to ₹${newPrice}`]
-  );
-
-  const history = dbQuery.all(`SELECT * FROM price_history WHERE product_id = ? ORDER BY created_at DESC`, [productId]);
-  return res.json({ message: 'Price updated successfully', newPrice, priceHistory: history });
+  return res.json({ message: 'Price updated successfully', newPrice: price, priceHistory: history });
 });
 
-// Toggle Status / Availability
-router.patch('/:id/toggle-status', authenticateToken, requireRole('ADMIN'), (req: AuthenticatedRequest, res: Response) => {
-  const productId = Number(req.params.id);
-  const existing = dbQuery.get('SELECT * FROM products WHERE id = ?', [productId]);
-  if (!existing) return res.status(404).json({ error: 'Product not found' });
+router.patch('/:id/toggle-status', authenticateToken, requireRole('ADMIN'), async (req: AuthenticatedRequest, res) => {
+  const actor = currentUser(req);
+  const { id } = parse(idParam, req.params);
 
-  const nextStatus = existing.availability === 'AVAILABLE' ? 'UNAVAILABLE' : 'AVAILABLE';
-  dbQuery.run('UPDATE products SET availability = ? WHERE id = ?', [nextStatus, productId]);
+  const next = await db.transaction(async (tx) => {
+    const existing = await tx.get<ProductRow>('SELECT * FROM products WHERE id = ?', [id]);
+    if (!existing || existing.is_archived) throw notFound('Product not found');
+    const nextStatus = existing.availability === 'AVAILABLE' ? 'UNAVAILABLE' : 'AVAILABLE';
+    await tx.run('UPDATE products SET availability = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [nextStatus, id]);
+    await audit(tx, actor, 'TOGGLE_PRODUCT_STATUS', `Status of '${existing.name}' changed to ${nextStatus}`, req.ip);
+    return nextStatus;
+  });
 
-  dbQuery.run(
-    `INSERT INTO audit_logs (action, user_id, user_name, user_role, description) VALUES (?, ?, ?, ?, ?)`,
-    ['TOGGLE_PRODUCT_STATUS', req.user!.id, req.user!.name, req.user!.role, `Status of '${existing.name}' changed to ${nextStatus}`]
-  );
-
-  return res.json({ message: `Product availability changed to ${nextStatus}`, availability: nextStatus });
+  return res.json({ message: `Product availability changed to ${next}`, availability: next });
 });
 
-// Delete Product (Admin Only)
-router.delete('/:id', authenticateToken, requireRole('ADMIN'), (req: AuthenticatedRequest, res: Response) => {
-  const productId = Number(req.params.id);
-  const existing = dbQuery.get('SELECT * FROM products WHERE id = ?', [productId]);
-  if (!existing) return res.status(404).json({ error: 'Product not found' });
+// Soft delete: order history and cart snapshots keep referencing the product row.
+router.delete('/:id', authenticateToken, requireRole('ADMIN'), async (req: AuthenticatedRequest, res) => {
+  const actor = currentUser(req);
+  const { id } = parse(idParam, req.params);
 
-  dbQuery.run('DELETE FROM products WHERE id = ?', [productId]);
-
-  dbQuery.run(
-    `INSERT INTO audit_logs (action, user_id, user_name, user_role, description) VALUES (?, ?, ?, ?, ?)`,
-    ['DELETE_PRODUCT', req.user!.id, req.user!.name, req.user!.role, `Deleted product: ${existing.name}`]
-  );
+  await db.transaction(async (tx) => {
+    const existing = await tx.get<ProductRow>('SELECT * FROM products WHERE id = ?', [id]);
+    if (!existing || existing.is_archived) throw notFound('Product not found');
+    await tx.run(
+      `UPDATE products SET is_archived = 1, availability = 'UNAVAILABLE', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [id]
+    );
+    await audit(tx, actor, 'DELETE_PRODUCT', `Archived product: ${existing.name}`, req.ip);
+  });
 
   return res.json({ message: 'Product deleted successfully' });
 });

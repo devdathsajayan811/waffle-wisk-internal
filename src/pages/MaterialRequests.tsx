@@ -1,8 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { PackageCheck, Clock, CheckCircle2, CheckSquare, PlusCircle, AlertCircle, ShoppingCart } from 'lucide-react';
+import { PackageCheck, Clock, CheckCircle2, CheckSquare, Send, ShoppingCart, MessageSquareText } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { MaterialRequest, RequestStatus, Cart } from '../types';
+import { Alert, EmptyState, PageHeader } from '../components/ui';
+
+const STATUS_META: Record<RequestStatus, { className: string; icon: React.FC<{ className?: string }> }> = {
+  Pending: { className: 'badge-warning', icon: Clock },
+  Approved: { className: 'badge-info', icon: CheckCircle2 },
+  Completed: { className: 'badge-success', icon: CheckSquare },
+};
 
 export const MaterialRequests: React.FC = () => {
   const { isAdmin } = useAuth();
@@ -11,6 +18,7 @@ export const MaterialRequests: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | RequestStatus>('all');
 
   // New Request Form State
   const [material, setMaterial] = useState('');
@@ -61,7 +69,7 @@ export const MaterialRequests: React.FC = () => {
         cart_id: selectedCart ? selectedCart.id : undefined,
         cart_number: selectedCart ? selectedCart.cart_number : undefined,
       });
-      setSuccessMsg('Raw material request sent to owner!');
+      setSuccessMsg('Request sent to the owner.');
       setMaterial('');
       setQuantity('');
       setNote('');
@@ -77,259 +85,210 @@ export const MaterialRequests: React.FC = () => {
   const handleUpdateStatus = async (id: number, newStatus: RequestStatus) => {
     try {
       await api.updateMaterialRequestStatus(id, newStatus);
-      setRequests((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r))
-      );
+      setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r)));
     } catch (err: any) {
-      alert(err.message || 'Failed to update status');
+      setError(err.message || 'Failed to update status');
     }
   };
 
-  const getStatusBadge = (status: RequestStatus) => {
-    switch (status) {
-      case 'Pending':
-        return (
-          <span className="inline-flex items-center px-2.5 py-1 text-xs font-bold rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-            <Clock className="w-3.5 h-3.5 mr-1" /> Pending
-          </span>
-        );
-      case 'Approved':
-        return (
-          <span className="inline-flex items-center px-2.5 py-1 text-xs font-bold rounded-full bg-blue-100 text-blue-800 border border-blue-300">
-            <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approved
-          </span>
-        );
-      case 'Completed':
-        return (
-          <span className="inline-flex items-center px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-            <CheckSquare className="w-3.5 h-3.5 mr-1" /> Completed
-          </span>
-        );
-      default:
-        return null;
-    }
+  const counts = {
+    all: requests.length,
+    Pending: requests.filter((r) => r.status === 'Pending').length,
+    Approved: requests.filter((r) => r.status === 'Approved').length,
+    Completed: requests.filter((r) => r.status === 'Completed').length,
   };
+  const visible = statusFilter === 'all' ? requests : requests.filter((r) => r.status === statusFilter);
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-cream-300 pb-4">
-        <div>
-          <h1 className="text-2xl font-black text-choco-900 flex items-center">
-            <PackageCheck className="w-7 h-7 mr-2 text-waffle-500" />
-            Raw Material Requests
-          </h1>
-          <p className="text-xs text-choco-600 font-medium">
-            {isAdmin
-              ? 'View and manage material requests submitted by staff members.'
-              : 'Request required raw materials (flour, chocolate, toppings, cups, etc.) for your carts.'}
-          </p>
-        </div>
-      </div>
+    <div className="page">
+      <PageHeader
+        eyebrow="Catalog & stock"
+        title="Material requests"
+        description={
+          isAdmin
+            ? 'Requests from staff for flour, chocolate, toppings, cups and other supplies.'
+            : 'Running low on something? Ask the owner and track the request here.'
+        }
+      />
 
-      {error && (
-        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl text-xs font-semibold flex items-center space-x-2">
-          <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
-          <span>{error}</span>
-        </div>
-      )}
+      {error && <Alert tone="error">{error}</Alert>}
+      {successMsg && <Alert tone="success">{successMsg}</Alert>}
 
-      {successMsg && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl text-xs font-semibold flex items-center space-x-2">
-          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-          <span>{successMsg}</span>
-        </div>
-      )}
-
-      {/* Staff Request Form */}
-      <div className="bg-white rounded-3xl p-6 border border-cream-300 shadow-soft">
-        <h2 className="text-base font-extrabold text-choco-900 mb-4 flex items-center">
-          <PlusCircle className="w-5 h-5 mr-2 text-waffle-600" />
-          Request Raw Material
-        </h2>
-        <form onSubmit={handleCreateRequest} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-xs font-bold text-choco-800 uppercase tracking-wider mb-1">
-              Material Name *
-            </label>
-            <input
-              type="text"
-              required
-              value={material}
-              onChange={(e) => setMaterial(e.target.value)}
-              placeholder="e.g., Flour, Chocolate, Strawberries"
-              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-cream-300 focus:outline-hidden focus:ring-2 focus:ring-waffle-400"
-            />
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
+        {/* Request form */}
+        <section className="card lg:sticky lg:top-4">
+          <div className="card-header">
+            <div>
+              <h2 className="card-title">New request</h2>
+              <p className="card-subtitle">The owner is notified straight away.</p>
+            </div>
           </div>
+          <form onSubmit={handleCreateRequest} className="card-body space-y-4">
+            <div>
+              <label className="label" htmlFor="req-material">Material</label>
+              <input
+                id="req-material"
+                type="text"
+                required
+                value={material}
+                onChange={(e) => setMaterial(e.target.value)}
+                placeholder="e.g. Dark chocolate"
+                className="input"
+              />
+            </div>
 
-          <div>
-            <label className="block text-xs font-bold text-choco-800 uppercase tracking-wider mb-1">
-              Quantity *
-            </label>
-            <input
-              type="number"
-              step="any"
-              min="0.1"
-              required
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              placeholder="e.g., 5"
-              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-cream-300 focus:outline-hidden focus:ring-2 focus:ring-waffle-400"
-            />
-          </div>
+            <div className="grid grid-cols-[minmax(0,1fr)_7.5rem] gap-3">
+              <div>
+                <label className="label" htmlFor="req-qty">Quantity</label>
+                <input
+                  id="req-qty"
+                  type="number"
+                  step="any"
+                  min="0.1"
+                  required
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  placeholder="5"
+                  className="input tabular-nums"
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="req-unit">Unit</label>
+                <select id="req-unit" value={unit} onChange={(e) => setUnit(e.target.value)} className="select">
+                  {['kg', 'packets', 'bottles', 'boxes', 'tubs', 'pcs', 'liters'].map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-          <div>
-            <label className="block text-xs font-bold text-choco-800 uppercase tracking-wider mb-1">
-              Unit *
-            </label>
-            <select
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-cream-300 focus:outline-hidden focus:ring-2 focus:ring-waffle-400 bg-white"
-            >
-              <option value="kg">kg</option>
-              <option value="packets">packets</option>
-              <option value="bottles">bottles</option>
-              <option value="boxes">boxes</option>
-              <option value="tubs">tubs</option>
-              <option value="pcs">pcs</option>
-              <option value="liters">liters</option>
-            </select>
-          </div>
+            <div>
+              <label className="label" htmlFor="req-cart">For cart</label>
+              <select id="req-cart" value={selectedCartId} onChange={(e) => setSelectedCartId(e.target.value)} className="select">
+                <option value="">General stock</option>
+                {activeCarts.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.cart_number} ({c.staff_name})
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <div>
-            <label className="block text-xs font-bold text-choco-800 uppercase tracking-wider mb-1">
-              Link to Active Cart (Optional)
-            </label>
-            <select
-              value={selectedCartId}
-              onChange={(e) => setSelectedCartId(e.target.value)}
-              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-cream-300 focus:outline-hidden focus:ring-2 focus:ring-waffle-400 bg-white"
-            >
-              <option value="">General Request (No Cart)</option>
-              {activeCarts.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.cart_number} ({c.staff_name})
-                </option>
-              ))}
-            </select>
-          </div>
+            <div>
+              <label className="label" htmlFor="req-note">Note</label>
+              <textarea
+                id="req-note"
+                rows={2}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="e.g. Needed before the evening rush"
+                className="input resize-none"
+              />
+            </div>
 
-          <div className="sm:col-span-2 lg:col-span-4">
-            <label className="block text-xs font-bold text-choco-800 uppercase tracking-wider mb-1">
-              Note (Optional)
-            </label>
-            <input
-              type="text"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="e.g., Required for tomorrow morning"
-              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-cream-300 focus:outline-hidden focus:ring-2 focus:ring-waffle-400"
-            />
-          </div>
-
-          <div className="sm:col-span-2 lg:col-span-4 flex justify-end pt-2">
-            <button
-              type="submit"
-              disabled={submitting}
-              className="py-3 px-6 bg-waffle-500 hover:bg-waffle-600 text-white font-bold text-sm rounded-xl shadow-waffle transition-all disabled:opacity-60 flex items-center"
-            >
-              {submitting ? 'Sending...' : 'Send Request to Owner'}
+            <button type="submit" disabled={submitting} className="btn-primary w-full">
+              <Send className="h-4 w-4" />
+              {submitting ? 'Sending…' : 'Send request'}
             </button>
+          </form>
+        </section>
+
+        {/* Request list */}
+        <section className="card overflow-hidden">
+          <div className="card-header">
+            <div>
+              <h2 className="card-title">{isAdmin ? 'All requests' : 'My requests'}</h2>
+              <p className="card-subtitle">Newest first</p>
+            </div>
+            <div className="segmented">
+              {(['all', 'Pending', 'Approved', 'Completed'] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={`segmented-item ${statusFilter === s ? 'segmented-item-active' : ''}`}
+                >
+                  {s === 'all' ? 'All' : s}
+                  <span className="rounded bg-cream-200/80 px-1.5 text-2xs tabular-nums text-choco-500">{counts[s]}</span>
+                </button>
+              ))}
+            </div>
           </div>
-        </form>
-      </div>
 
-      {/* Requests Table / Cards */}
-      <div className="bg-white rounded-3xl p-6 border border-cream-300 shadow-soft">
-        <h2 className="text-base font-extrabold text-choco-900 mb-4">
-          {isAdmin ? 'All Staff Raw Material Requests' : 'My Requests Status'}
-        </h2>
-
-        {loading ? (
-          <div className="py-12 text-center text-xs font-bold text-choco-500">
-            Loading requests...
-          </div>
-        ) : requests.length === 0 ? (
-          <div className="py-12 text-center text-xs text-choco-500 font-medium">
-            No material requests found.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {requests.map((req) => (
-              <div
-                key={req.id}
-                className="p-4 rounded-2xl bg-cream-50/60 border border-cream-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 hover:border-waffle-300 transition-colors"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center space-x-2">
-                    <span className="font-extrabold text-choco-900 text-base">
-                      {req.material}
-                    </span>
-                    <span className="px-2 py-0.5 bg-waffle-100 text-waffle-800 text-xs font-bold rounded-md">
-                      {req.quantity} {req.unit}
-                    </span>
-                    {req.cart_number && (
-                      <span className="px-2 py-0.5 bg-cream-200 text-choco-800 text-xs font-bold rounded-md flex items-center">
-                        <ShoppingCart className="w-3 h-3 mr-1 text-choco-600" /> #{req.cart_number}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="text-xs text-choco-600 flex flex-wrap gap-x-4 gap-y-1">
-                    <span>
-                      <strong className="text-choco-800">Staff:</strong> {req.staff_name}
-                    </span>
-                    <span>
-                      <strong className="text-choco-800">Date:</strong>{' '}
-                      {new Date(req.created_at).toLocaleString()}
-                    </span>
-                  </div>
-
-                  {req.note && (
-                    <p className="text-xs italic text-choco-500 bg-white/80 p-2 rounded-lg border border-cream-200">
-                      "{req.note}"
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex items-center space-x-3 shrink-0 self-start sm:self-center">
-                  <div>{getStatusBadge(req.status)}</div>
-
-                  {/* Admin Status Actions */}
-                  {isAdmin && (
-                    <div className="flex items-center space-x-1">
-                      {req.status !== 'Pending' && (
-                        <button
-                          onClick={() => handleUpdateStatus(req.id, 'Pending')}
-                          className="px-2.5 py-1 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition-colors"
-                        >
-                          Pending
-                        </button>
-                      )}
-                      {req.status !== 'Approved' && (
-                        <button
-                          onClick={() => handleUpdateStatus(req.id, 'Approved')}
-                          className="px-2.5 py-1 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors"
-                        >
-                          Approve
-                        </button>
-                      )}
-                      {req.status !== 'Completed' && (
-                        <button
-                          onClick={() => handleUpdateStatus(req.id, 'Completed')}
-                          className="px-2.5 py-1 text-xs font-bold text-emerald-700 bg-emerald-100 rounded-lg border border-emerald-200 transition-colors"
-                        >
-                          Complete
-                        </button>
+          {loading ? (
+            <div className="space-y-3 p-5">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="skeleton h-20 rounded-xl" />
+              ))}
+            </div>
+          ) : visible.length === 0 ? (
+            <EmptyState
+              icon={PackageCheck}
+              title={statusFilter === 'all' ? 'No requests yet' : `No ${statusFilter.toLowerCase()} requests`}
+              description={statusFilter === 'all' ? 'Requests you send will be tracked here.' : 'Switch the filter to see others.'}
+            />
+          ) : (
+            <ul className="divide-y divide-cream-200/70">
+              {visible.map((req) => {
+                const meta = STATUS_META[req.status];
+                const StatusIcon = meta?.icon ?? Clock;
+                return (
+                  <li key={req.id} className="flex flex-col gap-3 px-5 py-4 transition-colors hover:bg-cream-50/60 sm:flex-row sm:items-start sm:justify-between sm:px-6">
+                    <div className="min-w-0 space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-choco-900">{req.material}</span>
+                        <span className="badge-neutral tabular-nums">
+                          {req.quantity} {req.unit}
+                        </span>
+                        {req.cart_number && (
+                          <span className="badge-waffle">
+                            <ShoppingCart className="h-3 w-3" /> {req.cart_number}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-choco-400">
+                        {req.staff_name} ·{' '}
+                        {new Date(req.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                      </p>
+                      {req.note && (
+                        <p className="flex items-start gap-1.5 text-sm text-choco-500">
+                          <MessageSquareText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-choco-300" />
+                          {req.note}
+                        </p>
                       )}
                     </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+
+                    <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                      <span className={meta?.className ?? 'badge-neutral'}>
+                        <StatusIcon className="h-3 w-3" /> {req.status}
+                      </span>
+                      {isAdmin && (
+                        <div className="flex items-center gap-1">
+                          {req.status === 'Pending' && (
+                            <button onClick={() => handleUpdateStatus(req.id, 'Approved')} className="btn-secondary btn-sm">
+                              Approve
+                            </button>
+                          )}
+                          {req.status !== 'Completed' && (
+                            <button onClick={() => handleUpdateStatus(req.id, 'Completed')} className="btn-success btn-sm">
+                              Mark delivered
+                            </button>
+                          )}
+                          {req.status !== 'Pending' && (
+                            <button onClick={() => handleUpdateStatus(req.id, 'Pending')} className="btn-ghost btn-sm">
+                              Reopen
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
       </div>
     </div>
   );

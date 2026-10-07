@@ -1,8 +1,36 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Filter } from 'lucide-react';
+import { ScrollText } from 'lucide-react';
 import { api } from '../services/api';
 import { AuditLog } from '../types';
 import { StatusBadge } from '../components/StatusBadge';
+import { EmptyState, PageHeader, SkeletonRows } from '../components/ui';
+
+const ACTIONS = [
+  'LOGIN',
+  'CREATE_PRODUCT',
+  'UPDATE_PRODUCT',
+  'PRICE_CHANGE',
+  'STOCK_MOVEMENT',
+  'CREATE_ORDER',
+  'REFUND_ORDER',
+  'CREATE_USER',
+  'UPDATE_SETTINGS',
+];
+
+const actionLabel = (action: string) =>
+  action
+    .toLowerCase()
+    .split('_')
+    .map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+    .join(' ');
+
+const actionTone = (action: string) => {
+  if (action.includes('REFUND')) return 'badge-danger';
+  if (action.includes('PRICE') || action.includes('SETTINGS')) return 'badge-warning';
+  if (action.includes('CREATE')) return 'badge-success';
+  if (action === 'LOGIN') return 'badge-info';
+  return 'badge-neutral';
+};
 
 export const AuditLogs: React.FC = () => {
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -26,83 +54,77 @@ export const AuditLogs: React.FC = () => {
   }, [actionFilter]);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-bold text-choco-900">Admin Audit Logs</h2>
-          <p className="text-xs text-choco-500">Security audit history tracking price edits, stock updates, logins, and system changes</p>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <Filter className="w-3.5 h-3.5 text-choco-500" />
+    <div className="page">
+      <PageHeader
+        eyebrow="Insights"
+        title="Audit logs"
+        description="Who changed what and when: sign-ins, price edits, stock movements and settings changes."
+        actions={
           <select
             value={actionFilter}
             onChange={(e) => setActionFilter(e.target.value)}
-            className="px-3.5 py-2 text-xs rounded-xl border border-cream-300 focus:outline-hidden bg-white text-choco-800"
+            className="select w-auto min-w-[12rem]"
+            aria-label="Filter by action"
           >
-            <option value="all">All Actions</option>
-            <option value="LOGIN">LOGIN</option>
-            <option value="CREATE_PRODUCT">CREATE_PRODUCT</option>
-            <option value="UPDATE_PRODUCT">UPDATE_PRODUCT</option>
-            <option value="PRICE_CHANGE">PRICE_CHANGE</option>
-            <option value="STOCK_MOVEMENT">STOCK_MOVEMENT</option>
-            <option value="CREATE_ORDER">CREATE_ORDER</option>
-            <option value="REFUND_ORDER">REFUND_ORDER</option>
-            <option value="CREATE_USER">CREATE_USER</option>
-            <option value="UPDATE_SETTINGS">UPDATE_SETTINGS</option>
+            <option value="all">All actions</option>
+            {ACTIONS.map((a) => (
+              <option key={a} value={a}>
+                {actionLabel(a)}
+              </option>
+            ))}
           </select>
-        </div>
-      </div>
+        }
+      />
 
-      {/* Logs Table */}
-      <div className="bg-white rounded-2xl border border-cream-200 shadow-soft overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-cream-100/60 text-choco-700 uppercase tracking-wider font-bold">
-              <tr>
-                <th className="px-6 py-3">Action</th>
-                <th className="px-6 py-3">Description</th>
-                <th className="px-6 py-3">Performed By</th>
-                <th className="px-6 py-3">Role</th>
-                <th className="px-6 py-3">Timestamp</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-cream-200 text-choco-900">
-              {loading ? (
+      <div className="card overflow-hidden">
+        {!loading && logs.length === 0 ? (
+          <EmptyState
+            icon={ScrollText}
+            title="No activity recorded"
+            description={actionFilter === 'all' ? 'Actions will appear here as the team uses the portal.' : 'Nothing logged for this action yet.'}
+          />
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <td colSpan={5} className="text-center py-8 text-choco-400">
-                    Loading audit trail...
-                  </td>
+                  <th>Action</th>
+                  <th>Details</th>
+                  <th className="hidden md:table-cell">By</th>
+                  <th className="text-right">When</th>
                 </tr>
-              ) : logs.length > 0 ? (
-                logs.map((log) => (
-                  <tr key={log.id} className="hover:bg-cream-50/50 transition-colors">
-                    <td className="px-6 py-3.5">
-                      <span className="font-extrabold text-[11px] font-mono text-waffle-700 bg-waffle-50 px-2 py-0.5 rounded-md border border-waffle-200">
-                        {log.action}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3.5 font-medium text-choco-900">{log.description}</td>
-                    <td className="px-6 py-3.5 font-semibold text-choco-800">{log.user_name}</td>
-                    <td className="px-6 py-3.5">
-                      <StatusBadge status={log.user_role} type="role" />
-                    </td>
-                    <td className="px-6 py-3.5 text-choco-500 font-mono text-[11px]">
-                      {new Date(log.created_at).toLocaleString()}
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={5} className="text-center py-8 text-choco-400">
-                    No audit records found matching filter.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonRows cols={4} rows={8} />
+                ) : (
+                  logs.map((log) => (
+                    <tr key={log.id}>
+                      <td className="whitespace-nowrap">
+                        <span className={actionTone(log.action)}>{actionLabel(log.action)}</span>
+                      </td>
+                      <td className="min-w-[16rem] text-choco-700">{log.description}</td>
+                      <td className="hidden whitespace-nowrap md:table-cell">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-choco-900">{log.user_name}</span>
+                          <StatusBadge status={log.user_role} type="role" />
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap text-right text-xs tabular-nums text-choco-400">
+                        {new Date(log.created_at).toLocaleString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
